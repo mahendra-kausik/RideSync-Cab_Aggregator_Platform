@@ -1,4 +1,4 @@
-# A cab aggregator system
+# RideSync: A cab aggregator platform
 
 ## 📋 Project Description
 
