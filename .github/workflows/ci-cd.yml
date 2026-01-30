@@ -1,0 +1,120 @@
+# This is the name of the workflow that will appear in the "Actions" tab of your GitHub repository.
+name: CI-CD Pipeline
+
+# This section defines when the workflow should be triggered.
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel.
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:6.0
+        ports: ['27017:27017']
+        options: >-
+          --health-cmd="mongosh --quiet --eval 'db.runCommand({ping:1}).ok' || mongo --quiet --eval 'db.runCommand({ping:1}).ok'"
+          --health-interval=10s --health-timeout=5s --health-retries=5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js v18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Cache node modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            frontend/node_modules
+            backend/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      # Expose CI-wide environment variables for backend tests
+      - name: Set CI env defaults (use secrets when provided)
+        run: |
+          # Prefer repository secrets when available, otherwise use safe defaults for CI
+          if [ -n "${{ secrets.MONGODB_URI }}" ]; then
+            echo "MONGODB_URI=${{ secrets.MONGODB_URI }}" >> $GITHUB_ENV
+          else
+            echo "MONGODB_URI=mongodb://127.0.0.1:27017/cab-aggregator-test" >> $GITHUB_ENV
+          fi
+
+          if [ -n "${{ secrets.JWT_SECRET }}" ]; then
+            echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> $GITHUB_ENV
+          else
+            echo "JWT_SECRET=test-jwt-secret-ci-01234567890123456789" >> $GITHUB_ENV
+          fi
+
+          if [ -n "${{ secrets.ENCRYPTION_KEY }}" ]; then
+            echo "ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}" >> $GITHUB_ENV
+          else
+            echo "ENCRYPTION_KEY=ci-encryption-key-32-bytes-long!!" >> $GITHUB_ENV
+          fi
+
+      - name: Wait for MongoDB service (TCP check)
+        run: |
+          for i in {1..60}; do
+            if nc -z 127.0.0.1 27017 >/dev/null 2>&1; then
+              echo 'Mongo is up'; exit 0
+            fi
+            echo 'Waiting for Mongo...'; sleep 2;
+          done
+          echo 'Mongo did not start in time'; exit 1
+        shell: bash
+
+      # Install all dependencies (monorepo with workspaces)
+      - name: Install dependencies
+        run: npm install
+
+      # --- Frontend Steps ---
+      - name: Run frontend linting
+        run: npm run lint --prefix frontend --if-present
+
+      - name: Build frontend application
+        run: npm run build --prefix frontend --if-present
+
+      - name: Security audit for frontend
+        run: npm audit --prefix frontend --audit-level=high
+        continue-on-error: true
+
+      # --- Backend Steps ---
+      - name: Run backend linting
+        run: npm run lint --prefix backend --if-present
+
+      - name: Run backend tests
+        # Run tests in-band against the MongoDB service to avoid flakiness
+        run: npm test --prefix backend --if-present -- --runInBand
+        
+      - name: Security audit for backend
+        run: npm audit --prefix backend --audit-level=high
+        continue-on-error: true
+
+  deploy:
+    # The 'deploy' job will start only after the 'build' job has successfully completed.
+    needs: build
+    runs-on: ubuntu-latest
+    # This condition ensures the deploy job ONLY runs on a push to the 'main' branch.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Deploy to staging
+        run: echo "This step is a placeholder for your actual staging deployment script."
+        
+      - name: Run integration tests
+        run: echo "This step is a placeholder for running tests against the staging environment."
+        
+      - name: Deploy to production
+        # You would replace this echo command with your actual deployment trigger, like the curl command.
+        run: |
+          echo "Deploying to production environment..."
+          curl ${{ secrets.RENDER_DEPLOY_HOOK }}
