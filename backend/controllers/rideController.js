@@ -877,28 +877,6 @@ class RideController {
   }
 
   /**
-   * Calculate fare based on distance and duration
-   */
-  static calculateFare(distance, duration, surgeMultiplier = 1.0) {
-    const baseFare = 2.50;
-    const perKmRate = 1.20;
-    const perMinRate = 0.25;
-
-    const distanceFare = distance * perKmRate;
-    const timeFare = duration * perMinRate;
-    const surgeFare = (baseFare + distanceFare + timeFare) * (surgeMultiplier - 1);
-    const totalFare = (baseFare + distanceFare + timeFare + surgeFare);
-
-    return {
-      baseFare: Math.round(baseFare * 100) / 100,
-      distanceFare: Math.round(distanceFare * 100) / 100,
-      timeFare: Math.round(timeFare * 100) / 100,
-      surgeFare: Math.round(surgeFare * 100) / 100,
-      totalFare: Math.round(totalFare * 100) / 100
-    };
-  }
-
-  /**
    * Check if status transition is allowed for user role
    */
   static canUpdateStatus(currentStatus, newStatus, userRole, isRider, isDriver) {

@@ -1,6 +1,6 @@
-# PROJECT_PLAN.md — DocsGPT-Agent
+# PROJECT_PLAN.md — RideSync
 
-> **What** we are building and in **what order**. Read alongside `CLAUDE.md` (how to build) and
+> **What** we are upgrading and in **what order**. Read alongside `CLAUDE.md` (how to build) and
 > `DECISIONS.md` (why each choice). All facts marked ⚠️ **VERIFY** must be re-checked against the
 > provider's live docs before you rely on them — free-tier limits change frequently.
 
@@ -8,311 +8,237 @@
 
 ## 0. Problem statement (the thing to say in interviews)
 
-Developer documentation for fast-moving frameworks is a poor retrieval target for naive RAG: answers to
-real questions ("how do I stream tokens from a LangGraph node while persisting state?", "what changed
-about X between v0.2 and v0.6 and how do I migrate?") are **scattered across multiple doc pages, GitHub
-discussions, and changelogs**, and are **entity/token-heavy** (exact API names, flags, version numbers)
-where pure semantic (dense) search underperforms. This is the setting where **hybrid retrieval +
-reranking + a genuine multi-hop agent** measurably beats "chat with your PDF" — and, crucially, where the
-improvement is **quantifiable** with real gold data.
+RideSync is a working MERN ride-hailing platform — riders book, a geospatial matcher assigns the nearest
+available driver, both sides get live updates over WebSocket, fares are computed dynamically, and PII is
+encrypted at rest. It already has real engineering: a circuit-breaker/graceful-degradation layer, JWT/OTP
+auth, field-level AES-256-GCM encryption, and 578 automated tests at ~72% coverage.
 
-**Why this is not a "numbers on a dataset" project:** it is a working, deployed tool answering real
-developer questions with citations, evaluated rigorously. The evaluation exists to *defend* the tool, not
-to *be* the project.
+**But it has never left localhost.** It runs only via Docker Compose, so three things that separate a
+production service from a student project are missing or unproven:
+1. **It isn't deployed** — no public URL, so "real-time ride-hailing platform" is a claim nobody can click.
+2. **It can't scale horizontally** — sessions, rate limiting, and Socket.IO all live in one process's RAM,
+   so running a second instance behind a load balancer would break them. Redis is provisioned in
+   `docker-compose.yml` but **no app code uses it.**
+3. **Nothing is measured** — the circuit breaker and geospatial matcher have no throughput/latency numbers,
+   so there are no defensible metrics for a resume.
 
----
-
-## 1. Corpus decision (VERIFY licensing before scraping)
-
-### Primary recommendation: LangChain + LangGraph docs + their GitHub
-- **Why:** You already know this ecosystem deeply (you're building *with* LangGraph), so you can speak to
-  the corpus fluently and author good eval questions. It moves fast → natural version-drift → the "what
-  changed between versions" multi-hop story is real, not contrived.
-- **Sources:** official docs sites (docs pages), the repo's **GitHub Discussions** (these have a native
-  *"marked as answer"* feature → your best source of natural relevance labels), plus **closed Issues** with
-  a linked resolving comment/PR, plus `CHANGELOG` / release notes.
-  > **→ Superseded by D-018.** GitHub Discussions migrated to the **LangChain Forum** (Discourse) in
-  > mid-2025 — `langchain-ai/langchain` has only 4 unanswered Announcement discussions, `langgraph` has
-  > none. Natural labels actually come from 163 solved Forum topics; closed Issues were never hand-mapped.
-- **Size target:** ~3,000–15,000 chunks (a few hundred doc pages + a few thousand discussion/issue threads).
-  Comfortably within Qdrant free tier (~1M vectors @ 768-dim; see §3).
-
-### Alternative: Kubernetes docs + GitHub
-- **Why consider:** Kubernetes documentation is **licensed CC BY 4.0** (explicitly reusable — the cleanest
-  licensing story), very well-structured, and large. Good if you want to avoid any scraping-ToS ambiguity.
-- **Tradeoff:** more stable than LangChain, so the version-drift multi-hop angle is weaker; larger corpus to
-  wrangle in limited time.
-
-### ⚠️ Licensing / ToS note (do not skip — an interviewer or another AI will ask)
-- **Prefer openly-licensed docs.** Kubernetes = CC BY 4.0. Most framework *code* is MIT/Apache, but **docs
-  licensing is separate** — check each source's LICENSE / site terms before scraping.
-- **GitHub content** is accessible via the REST/GraphQL API under GitHub's terms; authenticated requests are
-  rate-limited to **5,000 requests/hour**. Cache aggressively; don't re-scrape on every run.
-- **Avoid corpora whose ToS forbid scraping** (e.g., some commercial docs). When in doubt, pick the CC-licensed
-  option. Log the corpus + licensing decision in `DECISIONS.md`.
-
-### ⚠️ Gold-label reality check (this is the part that's easy to underestimate)
-"Accepted answers = free labels" is **partly** true and needs manual work:
-- **GitHub _Discussions_** have "marked as answer" → clean natural labels. Use these first.
-- **GitHub _Issues_ do NOT have accepted answers.** For issues, you must hand-map the resolving comment/PR.
-- Plan for **~100–150 hand-verified Q→gold-chunk pairs** as the core gold set (built in Layer 3), augmented
-  with RAGAS-synthesized questions. Budget real time for curation; do not assume it's automatic.
-> **→ Superseded by D-018/D-025.** Labels came from Forum solved-topics, not GitHub. The reality check
-> proved even sharper than expected: 114/163 accepted forum answers link no docs page at all (code
-> fixes, not doc pointers) — so the gold set rebalanced to a **26-item real answer-link slice** (the
-> honest headline) + **100 synthetic** (Groq-8B generated, gold-by-construction) for statistical power,
-> reported separately per source, never blended into one number (D-025).
+This plan closes those three gaps. It is an **upgrade, not a rewrite**, and it deliberately stays in the
+full-stack / production-engineering lane (deployment, scalability, load testing, observability, DB/API
+hardening) — **no** distributed-consensus or AI additions, which are covered by sibling projects.
 
 ---
 
-## 2. Architecture (in words)
+## 1. Locked decisions (see DECISIONS.md D-001..D-003)
+
+- **Hosting (D-001):** **Render** (Node API + Socket.IO, native WebSocket) + **Vercel** (React frontend)
+  + **MongoDB Atlas M0** (managed Mongo) + **Upstash Redis** (serverless). Free, no credit card, and Render
+  is already the target of the existing CI/CD deploy hook.
+- **Shared state (D-002):** move sessions, rate limiting, and Socket.IO fan-out to **Redis**, with an
+  in-memory fallback when `REDIS_URL` is unset (local dev stays zero-dependency).
+- **Socket scaling (D-003):** `@socket.io/redis-adapter` (pub/sub) over sticky-session load balancing —
+  lets any instance deliver to any connected client without LB affinity.
+
+---
+
+## 2. Architecture (target state)
 
 ```
-User ──► Vercel (React/TS frontend, free Hobby tier)
-           │  HTTPS, streaming
-           ▼
-     Cloud Run (FastAPI + LangGraph agent)   ← always-free tier, scales to zero
-           │
-           ├─►  LLM Gateway (one wrapper: routing + 429 backoff + cache)
-           │        ├─ Groq llama-3.1-8b-instant  ← cheap high-volume nodes (grade, rewrite, decompose) + eval judge
-           │        └─ Gemini 2.5/3.x Flash        ← final answer synthesis
-           │
-           ├─►  Qdrant Cloud (free tier): dense vectors + BM25 sparse + RRF fusion (server-side)
-           │      [→ D-027: qdrant-client's FusionQuery has no k, so fusion is CLIENT-side to honor k=60]
-           │
-           ├─►  BGE cross-encoder reranker  ← runs in-container on CPU
-           │      [→ D-030/D-031/D-032: measured NEGATIVE (worse recall + 14x latency); rejected as
-           │       default, kept as a selectable --pipeline rerank ablation]
-           │
-           └─►  Langfuse Cloud (free tier): every node emits a trace span (tokens, latency, cost)
+Rider / Driver / Admin browser
+        │  HTTPS + WebSocket (Socket.IO)
+        ▼
+   Vercel  (React + TS + Vite, static build, free)          ← frontend
+        │  VITE_API_URL / VITE_SOCKET_URL
+        ▼
+   Render  (Node + Express + Socket.IO, always-on, native WS) ← backend  (architecture is scalable;
+        │                                                          live deploy is 1 instance — Render
+        │                                                          free tier disallows scaling out)
+        │            │                         │
+        │            │                         └─► Upstash Redis  ── sessions (TTL/blacklist)
+        │            │                                            ── rate-limit counters (rate-limit-redis)
+        │            │                                            ── Socket.IO adapter (cross-instance pub/sub)
+        │            │
+        │            └─► GracefulDegradationService (circuit breakers: maps / sms / payment / geocoding)
+        │                     └─ fallbacks: OSM tiles, console SMS, mock payment, city-coord geocoding
+        ▼
+   MongoDB Atlas M0  (users w/ 2dsphere geo index, rides, OTPs w/ TTL)
 
-  Batch jobs (Cloud Run Jobs, on a schedule):
-     • nightly re-scrape + re-index corpus
-     • eval run (retrieval metrics + RAGAS) → writes results JSON → shown on a dashboard page
+  Observability (Layer 4):
+     • /metrics (prom-client)  ──►  Grafana Cloud (free)  →  p50/p95/p99 latency, error rate, RPS
+     • correlation-ID per request threaded through the existing logger
+
+  Keep-warm:  cron-job.org  ──►  GET /health  every ~10 min  (defeats Render free-tier sleep)
 ```
 
-**Agent flow (the core differentiator, Layer 5):**
-`decompose query → (retrieve → grade relevance → rewrite query if weak)×N → synthesize cited answer →
-verify answer is grounded in citations → self-correct/retry if not.`
-> **→ Superseded by D-037/D-038/D-041.** The built flow is `retrieve → synthesize → verify → {cite |
-> retry→synthesize | refuse→cite}`. Query decomposition/multi-query retrieval was built, measured, and
-> **rejected** (crushes the real-question slice, D-037). Pre-synthesis relevance grading was built,
-> measured, and **rejected** (prior-contaminated — the grader can't separate "I know this" from "the
-> passages say this," D-038); replaced by **post-synthesis grounding verification**. Self-correction
-> **re-synthesizes over the same context** with corrective feedback, not re-retrieval (D-041) — re-query
-> was already shown to hurt, so a retry that re-retrieves would repeat a known failure.
+**Request/scale story (the core interview differentiator):** before this upgrade, a WebSocket message
+emitted on instance A never reaches a client on instance B, and rate limits/sessions diverge per instance —
+so the app is single-instance-only. After Layer 2, Redis pub/sub + shared session/limit stores make the app
+**horizontally scalable**, demonstrable by running two instances locally and watching a ride update cross
+between them.
 
 ---
 
-## 3. Tech stack (VERIFIED as of the plan date — re-check ⚠️ items)
+## 3. Tech stack (upgrade deltas; ⚠️ re-verify free-tier limits live)
 
-### Vector store + hybrid retrieval — **Qdrant Cloud free tier**
-- **Specs (⚠️ VERIFY):** 0.5 vCPU, 1 GB RAM, 4 GB disk, no credit card, permanent. Holds ~1M vectors @ 768-dim.
-- **Why:** stores **dense + BM25 sparse vectors in one collection** and does **RRF fusion server-side**
-  (`FusionQuery(fusion=Fusion.RRF)`), so you don't run a separate Elasticsearch. Highest-leverage infra choice.
-  > **→ Superseded by D-027.** `qdrant-client` 1.18's `FusionQuery` exposes no `k` parameter, so the
-  > documented `k=60` (D-006) couldn't be honored server-side. Fusion runs **client-side** in Python
-  > instead — two named-vector queries, fused with `rrf_fuse()`, keeping `k` a real, sweepable tunable.
-- **⚠️ CRITICAL OPERATIONAL RISK:** free clusters **auto-suspend after ~1 week of inactivity and are deleted
-  after ~4 weeks of inactivity.** Mitigation (build in Layer 8): a one-command **re-index script** so the
-  corpus can be rebuilt in minutes, plus a lightweight scheduled **keep-alive ping**. **Never treat the free
-  cluster as durable storage for your only copy** — keep the chunked corpus (JSONL) in the repo/bucket.
-- **Alternative to mention in interviews:** pgvector on Cloud SQL (the "one database: SQL + vectors + full-text"
-  story) — but Cloud SQL is not free beyond the trial, so it spends credits. Keep as the "production alternative I evaluated."
+### Hosting — **Render Web Service (backend)**
+- Always-on Node process, **native WebSocket** (no config), deploy-on-git-push, health check at `/health`.
+- **⚠️ VERIFY / known tradeoff:** free instances **sleep after ~15 min idle → ~30–50 s cold start.**
+  Mitigation: a free cron-job.org ping to `/health` every ~10 min. One always-on service ≈ 720 hrs/month
+  < the ~750 free instance-hours. No credit card required.
+- **Gotcha:** `server.js` runs a `SecurityValidator` gate in production that refuses to boot on missing/weak
+  secrets — all required env vars must be set before first deploy.
 
-### Embeddings — **BAAI BGE, self-hosted (free)**
-- `bge-small-en-v1.5` (**384-dim**, fast on CPU) as default; `bge-base-en-v1.5` (**768-dim**, higher quality) if
-  quality needs it. Both fit the free tier easily.
-- **Why:** free forever, runs on CPU, no per-call cost across the thousands of embed calls during indexing + eval.
-- **Ablation to run (and log):** benchmark `bge-small` vs `bge-base` (and optionally Gemini embeddings) on *your*
-  gold set and pick the winner. MTEB/BEIR rankings don't predict your corpus — say this in interviews.
-- Note on Gemini embeddings: usable and zero local compute, but **free-tier Gemini may train on your inputs** —
-  fine for *public* docs, not for anything private. Log this if you use it.
+### Frontend — **Vercel (Hobby, free)**
+- Static Vite build (`npm run build` → `dist/`). Env: `VITE_API_URL`, `VITE_SOCKET_URL` → Render URL.
+- **⚠️** Hobby is non-commercial — fine for a portfolio.
 
-### Keyword / sparse retrieval + fusion — **Qdrant native BM25 sparse + RRF**
-- Standard **RRF**: `score(d) = Σ 1/(k + rank_i(d))`, `k = 60`. Server-side in Qdrant.
-  > **→ Superseded by D-027**: fusion is client-side (see above) so `k=60` is actually honored/tunable.
-- **Alternative to mention:** `rank_bm25` in-memory (simplest, fine < ~50k chunks) or Postgres full-text.
+### Database — **MongoDB Atlas M0 (free)**
+- **⚠️ VERIFY:** 512 MB shared cluster, no card. IP allowlist `0.0.0.0/0` (Render free tier has no static egress IP).
+- Existing indexes live in `scripts/mongo-init.js` (only runs for the local Docker container) — port them to a
+  one-shot `scripts/ensure-indexes.js` run against Atlas so the `2dsphere` + TTL + hot-query indexes exist in prod.
 
-### Reranker — **BGE cross-encoder, self-hosted (free)**
-- `bge-reranker-base` or `bge-reranker-v2-m3` (Apache-2.0). For tighter CPU latency, `ms-marco-MiniLM-L-6-v2`
-  (~60–120 ms for ~50 candidates on CPU) or FlashRank.
-- Runs in the Cloud Run container on CPU. Measure and report rerank latency.
-- **Avoid** depending on Cohere Rerank for the live app — its free/trial quota (⚠️ VERIFY, ~1,000 calls/month) is
-  too tight for a public demo. Optionally use it only for a one-off *API-vs-open* comparison ablation.
-> **→ Superseded by D-030/D-031/D-032.** bge-reranker-base measured ~25-30s/query on free-tier CPU
-> (undeployable); swapped to MiniLM-L6, which measurably **hurt** recall/nDCG and cost 14x latency for
-> no gain. A 4-model bake-off (incl. bge via ONNX) confirmed **none** beat hybrid-no-rerank, especially
-> on the real forum slice. Reranking is rejected as the default; hybrid alone ships. Kept as a documented,
-> selectable ablation (`--pipeline rerank`) because it measurably helps the *synthetic* slice.
+### Shared state — **Upstash Redis (serverless, free)**
+- **⚠️ VERIFY** free command/day cap. Speaks the Redis wire protocol → works with `ioredis`,
+  `@socket.io/redis-adapter`, and `rate-limit-redis`.
+- Local dev keeps using the Docker `redis:7-alpine` already in `docker-compose.yml`.
 
-### LLMs — **Groq (workhorse) + Gemini (synthesis)**, routed
-- **Groq free tier (⚠️ VERIFY):** 30 RPM, 6,000 TPM, and **RPD varies by model** —
-  `llama-3.1-8b-instant` ≈ **14,400 RPD** (the workhorse), `llama-3.3-70b-versatile` ≈ **1,000 RPD**.
-  No credit card. Open-source models only. Blazing fast.
-- **Gemini free tier (⚠️ VERIFY — this shifted recently):** **Pro models are now paid-only.** Only **Flash /
-  Flash-Lite** (2.5 and newer 3.x) are free. Published RPD figures vary widely by source and change often
-  (seen anywhere from 250 to 1,500 RPD for Flash). **Do not hard-code a number — read the live cap in
-  Google AI Studio for your project and design backoff regardless.** Free tier may train on your inputs.
-- **Routing strategy (this is a resume-worthy engineering point — log it):**
-  - Cheap, high-volume nodes (**query decomposition, relevance grading, query rewriting**) → **Groq 8B**
-    (14,400 RPD is huge headroom, and it's fast). This is what keeps you inside free limits.
-  - **Final answer synthesis** (quality matters most) → **Gemini Flash** (or Groq 70B as fallback).
-  - **Eval-harness LLM-judge calls (RAGAS)** → **Groq 8B** to avoid burning Gemini's small daily quota.
-  - All calls through one wrapper with **exponential backoff + jitter** and a **response cache**.
-- **Reality to design for:** an agentic query can make 5–15 LLM calls. Routing the cheap ones to Groq 8B is
-  what makes a live demo survive on free tier. Say this explicitly in interviews — it shows production maturity.
+### Load testing — **k6 (open-source, local runner, free)**
+- Scenarios in `load/`: REST ramp (auth → fare estimate → book), concurrent WebSocket hold, and a
+  failure-injection run that trips the circuit breaker under load.
 
-### Agent framework — **LangGraph**
-- **Why:** the cyclic *decompose → retrieve → grade → rewrite → generate → verify* loop is a first-class state
-  machine with native cycles, state persistence, and streaming; it renders cleanly in Langfuse traces; and you
-  already know LangChain so ramp-up is short. This is what makes the "agentic" claim real rather than decorative.
-- **Alternative to mention:** LlamaIndex Workflows/agents (stronger out-of-the-box RAG modules). Reasonable to
-  use LlamaIndex retrieval components under LangGraph orchestration.
-
-### Evaluation — **custom retrieval metrics + RAGAS**
-- **Retrieval (no LLM judge, fully defensible):** Recall@k (k=1,5,10), MRR, nDCG@10, Hit Rate@k against the gold set.
-- **Answer quality (RAGAS):** Faithfulness, Answer Relevancy, Context Precision, Context Recall; Answer Correctness
-  where ground-truth answers exist. **RAGAS results depend on the judge LLM — fix the judge model across all runs**
-  (use Groq 8B consistently) so ablations are comparable; record the judge in each results file.
-- **Gold set:** natural labels (Discussions "marked as answer", curated closed-issue resolutions) as primary +
-  RAGAS `TestsetGenerator` synthetic (single-hop + multi-hop) as augmentation; hand-verify ~100–150 items.
-  > **→ Superseded by D-018/D-025.** Natural labels = Forum solved topics (26 real answer-link items,
-  > the honest headline), not Discussions/Issues. Synthetic = a **self-rolled** Groq-8B generator (not
-  > RAGAS `TestsetGenerator`) so gold chunk-ids are known by construction and hop-count is controlled;
-  > RAGAS itself is reserved for its real strength — answer-quality judging (Layer 5d, D-042).
-- **Build this EARLY (Layer 3), before hybrid/rerank/agent**, so every later change is a tracked delta.
-
-### Observability — **Langfuse Cloud free tier**
-- **⚠️ VERIFY** (~50k observations/month, ~30-day retention). Traces nested agent spans (LLM/tool/retrieval),
-  token cost, latency; has a scores/eval data model and LangGraph integration.
-- **Alternative:** Arize Phoenix (open-source, strong offline RAG-eval visualization). Both are OpenTelemetry-based.
-
-### Deployment
-- **Frontend:** React/TS on **Vercel Hobby (free)**. ⚠️ Hobby is **non-commercial** — fine for a portfolio; say so if asked.
-- **Backend + agent:** **FastAPI in a container on Google Cloud Run** — always-free tier (⚠️ VERIFY: ~180k vCPU-seconds,
-  ~360k GiB-seconds, ~2M requests/month, in specific regions like `us-central1`), **scales to zero**. Reranker on CPU is fine.
-  Note: scale-to-zero → **cold starts**; mitigate for demos by warming or a min-instance (spends a little credit).
-- **Vector DB:** Qdrant Cloud (managed, not localhost) — satisfies "deployed vector DB".
-- **Secrets:** Cloud Run env / Secret Manager. **GCP credits = insurance** (warm instance, pgvector alternative, or a
-  one-off GPU batch to precompute embeddings) — not the default.
+### Observability — **prom-client + Grafana Cloud (free)**
+- `prom-client` exposes `/metrics`; Grafana Cloud (⚠️ VERIFY free scrape/retention) renders dashboards.
+  Fallback if Grafana stalls: `/metrics` + a local Prometheus/Grafana `docker-compose` profile.
 
 ---
 
 ## 4. Build Layers (build ONE at a time — see CLAUDE.md Prime Directive)
 
-Each layer has an **Acceptance Gate**. Do not proceed to the next layer until its gate passes and I approve.
-Order is leverage-first: a demoable, *measured* core early; polish and product skin last.
+Each layer has an **Acceptance Gate**. Do not proceed until its gate passes and I approve.
+Order is leverage-first: get it deployed and demoable, then add the depth that produces metrics.
 
-### Layer 0 — Repo scaffold & config
-- Repo structure (`src/{ingest,retrieval,agent,eval,api}`, `tests/`, `config.py`/`config.yaml`, `.env.example`,
-  `pyproject.toml`/pinned `requirements.txt`, `Makefile`, CI stub, `.gitignore` for `.env`).
-- **Gate:** `make setup` installs cleanly; config loads; `.env.example` lists all needed keys; empty smoke test passes.
+### Layer 0 — Retarget the operating docs ✅ (this layer)
+- Rewrite `CLAUDE.md`, `PROJECT_PLAN.md`, `PROGRESS.md`, `DECISIONS.md` from the previous project to RideSync,
+  keeping the working-protocol instructions intact.
+- **Gate:** all four docs describe RideSync only; no DocsGPT/LangChain/RAGAS/Python references remain.
 
-### Layer 1 — Corpus ingestion & chunking
-- Fetch docs (respecting licensing) + GitHub Discussions/Issues (authenticated, cached). Clean HTML/markdown.
-- **Structure-aware chunking**: never split a code block or a function signature; keep heading path + source URL +
-  version as metadata on every chunk. Write chunks to versioned JSONL (this is your durable copy).
-- **Gate:** N chunks produced (report N); each has `{id, text, source_url, heading_path, version, type}`; spot-check
-  5 chunks show clean, coherent text with intact code blocks.
-  > **→ Superseded by D-016/D-018.** Corpus = a direct `git clone` of `langchain-ai/docs` (.mdx source,
-  > SHA-pinned), not HTML scraping — cleaner and licensing-verified MIT. Labels (Layer 1b) come from the
-  > Forum's public no-auth JSON API, not authenticated GitHub Discussions/Issues. Result: 11,035 chunks /
-  > 751 files.
+### Layer 1 — Deploy to a public URL (foundation)
+- ✅ **Pre-deploy bug fix (done)** — `frontend/src/components/common/MapComponent.tsx` had malformed Mapbox-token
+  logic (`isValidMapboxToken` assigned `mapboxToken && useEffect(...)`, a React hook in a `&&` short-circuit,
+  always falsy; `mapboxToken.startsWith('pk.')` threw when `VITE_MAPBOX_ACCESS_TOKEN` was unset — exactly Vercel's
+  default, i.e. it would have crashed the map on first deploy). Fixed: deleted the broken branch, now OSM tiles
+  only (matches the free-tier reality); verified via `npm run build`.
+- Atlas M0 cluster + `scripts/ensure-indexes.js`. Render Web Service for the backend (real secrets, `/health`
+  check). Vercel for the frontend (`VITE_*` → Render). CORS + Socket.IO CORS allow the Vercel origin.
+  cron-job.org keep-warm ping. Replace the placeholder `deploy` job in `.github/workflows/ci-cd.yml` with the
+  real Render deploy hook.
+- **Gate:** live Vercel URL loads; register → login → book → driver-accept works end-to-end against the deployed
+  backend, including a live WebSocket ride update.
 
-### Layer 2 — Indexing & dense baseline retrieval
-- Embed chunks (bge-small default) → push to Qdrant Cloud (dense only for now) → top-k dense search function.
-- **Gate:** a query returns sensible top-k chunks from the **deployed** Qdrant cluster (not local); latency logged.
+### Layer 2 — Redis shared-state layer (highest-leverage depth)
+- Add `ioredis`, `@socket.io/redis-adapter`, `rate-limit-redis`. Back `sessionManager` with Redis (preserve its
+  public interface). Swap rate-limit store to `rate-limit-redis`. Attach the Redis adapter to Socket.IO. Keep an
+  in-memory fallback when `REDIS_URL` is unset.
+- ⚠️ **Render's free tier explicitly disallows scaling beyond a single instance** (confirmed from Render's
+  docs, §8) — the horizontal-scaling proof below runs as **two local processes** against the same (Upstash)
+  Redis, not as two live Render instances. This is still a fully valid proof that the architecture is
+  horizontally scalable; be precise about the local-vs-live distinction in the README and in interviews.
+- **Gate:** two **local** backend instances against one Redis — a ride update emitted via instance A reaches
+  a client on instance B; sessions survive a single-instance restart; all 578 backend tests still pass.
 
-### Layer 3 — Eval harness + gold set + BASELINE numbers  ← the most important early layer
-- Build the gold set (natural labels + RAGAS synthetic; hand-verify ~100–150). Implement retrieval metrics
-  (Recall@k, MRR, nDCG, Hit Rate) + wire RAGAS (fixed Groq-8B judge). Run against the **dense-only** baseline.
-- **Gate:** baseline numbers printed **and saved to a results file** with the exact config + judge model recorded.
-  This is the reference every later improvement is measured against.
+### Layer 3 — Load testing with k6 (real metrics)
+- `load/` scenarios against the **deployed** stack: REST ramp (req/s + p95), concurrent WS hold, and a
+  failure-injection run showing the circuit breaker trip (CLOSED→OPEN→HALF_OPEN).
+- **Gate:** committed `load/README.md` with a results table — sustained X req/s, p95 < Y ms, Z concurrent WS
+  connections, plus a captured circuit-breaker trip. These become the resume metrics.
 
-### Layer 4 — Hybrid retrieval + reranker (the "money" ablation)
-- Add BM25 sparse vectors + RRF fusion in Qdrant. Add BGE reranker over fused candidates. Re-run the full eval.
-- **Gate:** a documented before/after table — **dense-only vs hybrid vs hybrid+rerank** — on the same gold set,
-  same config. This table alone is a resume bullet.
-  > **→ Superseded by D-030/D-031.** The 3-way table was built exactly as planned (`results/eval_{dense,
-  > hybrid,rerank}_*.json`) — but the **verdict** flipped from "ship the strongest of the three" to
-  > "ship hybrid; reranker is a measured negative, kept only as an ablation." The table is still the
-  > resume bullet — it's just an honest rejection, not a win, for the rerank column.
+### Layer 4 — Observability
+- `prom-client` `/metrics` (default + HTTP request-duration histogram, ride-match-duration, circuit-breaker
+  state gauge). Ship to Grafana Cloud for p50/p95/p99 + error-rate dashboards. Thread a correlation ID per
+  request through `requestLogger.js` + `logger.js`.
+- **Gate:** `/metrics` returns Prometheus format; a dashboard shows p50/p95/p99 + error rate under a k6 run; a
+  single request is traceable by correlation ID across log lines.
 
-### Layer 5 — Agentic loop + citations
-- 
-- **Gate:**
-
-### Layer 6 — API + streaming + rate-limit hardening
-- 
-- **Gate:** 
-
-### Layer 7 — Observability
-- 
-- **Gate:** 
-
-### Layer 8 — Deployment (not localhost)
-- 
-- **Gate:** 
-
-### Layer 9 (optional, only if time remains) — Product skin
-- 
-- **Gate:** 
-
-### Layer 10 — Polish & defense
-- 
-- **Gate:** 
+### Layer 5 — README-as-paper & defense (last)
+- Update `README.md`: architecture diagram, live URLs, load-test tables, the horizontal-scaling story, and the
+  honest-caveats section (circuit-breaker probe points, key-management gap). Resume bullets backed by results files.
+- **Gate:** every number in the README traces to a `load/` results file or a `DECISIONS.md` entry.
 
 ---
 
-## 5. Roadmap (maps layers → 5–6 weeks; leverage-first)
+## 5. Roadmap (leverage-first; part-time placement-season window)
 
-| Week | Layers | Outcome |
+| Phase | Layers | Outcome |
 |---|---|---|
-| 1 | 0, 1, 2, **3** | Ingest a slice, dense baseline live on Qdrant, **eval harness + baseline numbers**. |
-| 2 | 4 | Hybrid + rerank; **dense vs hybrid vs hybrid+rerank ablation table**. (Highest-ROI deliverable.) |
-| 3 | 5 | Agentic loop + citations; multi-hop questions now pass; traces to show. |
-| 4 | 6, 7 | API + streaming + backoff/routing; Langfuse observability; cost/latency measured. |
-| 5 | 8 (+9 if ahead) | **Deployed public URL**; re-index + keep-alive; optional product skin. |
-| 6 | 10 | Final eval, README-as-paper, demo video, resume bullets. |
+| A | 0, **1** | Docs retargeted; **live public URL** with the full booking flow working. |
+| B | **2** | Redis shared state → **horizontal scalability** demonstrable across two local instances (Render's free tier itself stays single-instance). |
+| C | 3 | k6 load tests → **real throughput/latency numbers** + circuit-breaker trip captured. |
+| D | 4 | Prometheus + Grafana dashboards + correlation IDs → production-grade observability. |
+| E | 5 | README-as-paper, resume bullets, demo. |
+
+**Minimum viable upgrade path (if time runs out):** Layer 1 (deploy, including the MapComponent fix) + Layer 3
+(load test) — a live URL with real measured numbers and no lingering pre-deploy crash risk. Redis (Layer 2) is
+the first thing to add with a spare weekend; it's the single highest-leverage upgrade.
 
 ---
 
-## 6. Metrics to track and put on the resume (frame as ablations, not absolutes)
+## 6. Roadmap / hardening backlog (built if time allows; quick wins folded into Layers 1–2)
 
-**Retrieval (compute yourself vs gold — most defensible, no LLM judge):**
-- **Recall@5** (headline), Recall@1/@10, **MRR@3**, nDCG@10, Hit Rate@k.
-
-**Answer quality (RAGAS, judge fixed to Groq 8B):**
-- Faithfulness (hallucination proxy), Answer Relevancy, Context Precision, Context Recall, Answer Correctness
-  (where ground truth exists).
-
-**Hallucination rate (measure honestly):**
-- Claim-level: a factual claim contradicted by ground truth (wrong version, invented API, phantom citation).
-  **Refusals / "I don't know" are NOT hallucinations.** Report as a before/after of "unsupported-claim rate."
-- Read faithfulness *together with* answer relevancy — a near-1.0 faithfulness with low relevancy is a **measurement
-  artifact** (little context → nothing to contradict), not a win. Mention this nuance in interviews; it signals rigor.
-
-**Engineering (from Langfuse):**
-- p50/p95 end-to-end latency, LLM calls/query, tokens/query, reranker latency, cost/query (notional pay-as-you-go, since you're on free tier).
-
-**Framing (fill X/Y with YOUR measured numbers — never invent):**
-- "Hybrid + cross-encoder rerank raised **Recall@5 from X→Y** and **MRR@3 from X→Y** vs a dense-only baseline on a
-  150-question gold set." *(Published precedent for the pattern — validate on your own data, cite as precedent only:
-  T²-RAGBench reported dense→hybrid+rerank Recall@5 0.587→0.816 and MRR@3 0.433→0.605.)*
-- "Query decomposition + self-correction loop **improved multi-hop answer correctness by X%** and **cut
-  unsupported-claim rate from X%→Y%** (RAGAS faithfulness 0.9X)."
-- "Instrumented Langfuse + an automated RAGAS/recall@k eval harness in CI; tracked **p95 latency, LLM-calls/query,
-  cost/query**, and routed cheap agent nodes to Groq to stay within free-tier limits."
-
-**Honesty guardrails:** report *your* measured numbers, keep the RAGAS judge fixed, prefer natural gold labels over
-synthetic, and don't claim zero hallucination — production RAG still errs; the point is you **measure and reduce** it.
+- ✅ **Done — dead-code cleanup (was NOT a live bug):** `backend/controllers/rideController.js` had an unused
+  static `calculateFare` using **USD** pricing, never called anywhere (grep-verified — all real paths already
+  used `backend/services/FareService.js`'s **INR** pricing). Fares were correct at runtime; the duplicate was
+  only a trap for a reviewer skimming the code. Deleted; verified via `services-fare.test.js` +
+  `rides-api.test.js` (51/51 passing).
+- **Quick win — index audit:** `explain()` the hot queries (geospatial `$near`, rides by `status`/`driverId`);
+  add compound indexes where a collection scan appears; fold into `ensure-indexes.js`.
+- **Later — OpenAPI/Swagger:** generate an OpenAPI 3.0 spec + `swagger-ui-express` at `/api/docs` (you already
+  have a Postman collection; a live spec is more professional).
+- **Later — idempotency keys on ride booking:** prevent double-book/double-charge on a client retry (exactly-once
+  booking) — genuine correctness depth without being a distributed-systems project.
 
 ---
 
-## 7. Open items to re-verify before/while building (⚠️)
-- Exact current **Gemini** free-tier RPM/RPD for the specific Flash model you pick (read live in AI Studio).
-- Exact current **Groq** per-model RPD (confirm `llama-3.1-8b-instant` daily cap).
-- **Qdrant** free-tier inactivity suspend/delete windows (confirm current values; keep the JSONL corpus as backup regardless).
-- **Cloud Run** always-free quotas + eligible regions; **Vercel Hobby** limits; **Langfuse** free observation cap.
-- Corpus **licensing/ToS** for whichever docs you scrape.
+## 7. Metrics to track and put on the resume (fill X/Y with YOUR measured numbers — never invent)
+
+**Deployment / scale:**
+- "Deployed a full-stack real-time platform (React/Vercel + Node/Render + MongoDB Atlas + Redis) at a public URL."
+- "Made the WebSocket + session + rate-limit layer **horizontally scalable** via a Redis adapter/shared store;
+  demonstrated cross-instance delivery across N instances."
+
+**Load / performance (from k6 against the deployed stack):**
+- "Load-tested to **X req/s at p95 < Y ms**; sustained **Z concurrent WebSocket connections**."
+- "Validated the graceful-degradation layer by inducing failures under load and observing the circuit breaker
+  trip (CLOSED→OPEN→HALF_OPEN) with fallback continuity."
+
+**Observability:**
+- "Instrumented **N Prometheus metrics** + Grafana dashboards (p50/p95/p99 latency, error rate) and request
+  correlation IDs for end-to-end tracing."
+
+**Data / correctness (if hardening built):**
+- "Cut hot-query latency **X→Y ms** via compound indexing verified with `explain()`; idempotent booking (exactly-once)."
+
+**Honesty guardrails:** report *your* measured numbers with the config recorded in the results file; acknowledge
+the known caveats (circuit breaker is per-instance in-memory; encryption key has no rotation) rather than hiding them.
+
+---
+
+## 8. Free-tier limits — verified 2026-07-22 against live docs/pricing pages
+
+- ✅ **Render:** 750 free instance-hrs/month · 15-min idle → spin-down · ~1 min cold-start · filesystem
+  wiped on spin-down. **⚠️ Confirmed hard restriction: free web services cannot scale beyond a single
+  instance** (Render's own docs). This means Layer 2's horizontal-scaling proof runs on **two local
+  processes**, not on the live deployed URL — see Layer 2's gate and the interview-defense notes.
+- ✅ **MongoDB Atlas M0:** 512 MB storage · 10 GB in/out per rolling 7-day window · 1 free cluster/project.
+  ⚠️ Still open: exact ops/sec throughput cap and max concurrent connections — not found on the page
+  checked; confirm before Layer 2 spins up a second instance sharing the same cluster.
+- ✅ **Upstash Redis:** 256 MB data · 10 GB bandwidth/month · **500K commands/month** · 1 free database.
+  ⚠️ Still open: TCP/`ioredis` wire-protocol access on the free plan wasn't independently confirmed
+  (vs. REST-only) — check before Layer 2, since `ioredis` + `@socket.io/redis-adapter` need real TCP.
+- ✅ **Grafana Cloud:** 14-day retention · 10K active series/month (metrics product, which is all this
+  project needs). ⚠️ Still open: logs/traces GB caps, team-size limit — not shown on the pricing page
+  checked; not blocking for Layer 4.
+- ✅ **Vercel Hobby:** 100 GB bandwidth/month · 1M function invocations · 10s/60s function duration ·
+  non-commercial ToS restriction (fine for a portfolio). Function limits are moot here — this is a static
+  SPA deploy, no serverless functions used.
+- ⚠️ **cron-job.org:** exact interval/timeout/response-size/API-request caps not published on their
+  marketing page — confirm at signup. Any interval under Render's 15-min sleep window still satisfies
+  the keep-warm requirement.

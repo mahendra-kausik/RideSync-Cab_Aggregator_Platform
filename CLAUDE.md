@@ -9,17 +9,21 @@
 
 ## 1. What we are building (one paragraph)
 
-**DocsGPT-Agent** — a deployed, agentic, *cited* question-answering system over a fast-moving
-developer-documentation corpus (LangChain/LangGraph docs + their GitHub Discussions/Issues, or
-Kubernetes docs as the alternative). Unlike "chat with your PDF," it does **genuine multi-step
-retrieval** (query decomposition → iterative retrieval → self-correction), **hybrid retrieval**
-(dense + BM25 with RRF fusion), **cross-encoder reranking**, **per-claim citations**, and ships
-with a **quantitative evaluation harness** (retrieval metrics + RAGAS) and **observability**
-(Langfuse). It runs on **free tiers only** (GCP credits held as insurance).
+**RideSync** — an existing, working MERN cab-aggregator platform (real-time ride matching, geospatial
+nearest-driver assignment, dynamic fare estimation, AES-256-GCM PII encryption, JWT/OTP auth, a real
+circuit-breaker/graceful-degradation layer, and 578 tests at ~72% coverage) that we are **upgrading into a
+deployed, production-shaped, resume-defensible full-stack portfolio piece** — *not* rebuilding from scratch.
+The work moves the app from "runs only via Docker Compose" to a **publicly deployed live URL** (Render + Vercel
++ MongoDB Atlas + Upstash Redis, free tier), then adds the production-engineering depth that separates a real
+service from a student CRUD app: a **Redis shared-state layer** (sessions + rate limiting + Socket.IO adapter →
+genuine horizontal scalability), **load testing with measured numbers** (k6), and **observability** (Prometheus
+metrics + Grafana dashboards + request correlation IDs).
 
-The goal is a resume-defensible project for **both SDE and Data Science** interviews. That means:
-strong engineering (deployed, observable, well-architected) **and** strong DS rigor (gold eval set,
-ablation tables, honest hallucination measurement).
+The goal is a project that is strong for **SDE/SWE interviews**: deployed, observable, horizontally scalable,
+and — critically — with **quantifiable metrics** (throughput, p95 latency, concurrent WebSocket connections)
+and every architectural claim (circuit breaker, geospatial matching, scaling) defensible under tough probing.
+This project deliberately does **not** add distributed-systems/consensus or AI depth — those live in the user's
+two sibling projects. RideSync is the **full-stack, production-engineering, product** piece.
 
 ---
 
@@ -33,6 +37,7 @@ This is the single most important rule. **Violating it is a failure, even if the
 4. **Then STOP and explicitly ask me for approval before starting the next layer.**
    Do not begin the next layer, do not "just scaffold ahead," do not batch two layers together.
 5. If a layer turns out to be bigger than expected, split it and stop at the first sub-part.
+6. After a layer or sub-layer is completed, commit and push all the changes to github.
 
 When you finish a layer, end your message with:
 `✅ Layer <N> complete. Gate results above. Shall I proceed to Layer <N+1>? (yes / adjust / stop)`
@@ -57,15 +62,19 @@ I must be able to explain **every non-trivial decision** in an interview. So:
 
 ## 4. Hard constraints (do not violate without asking)
 
-- **Free tier only.** No paid API calls, no paid cloud resources, without explicit approval.
-  GCP free-trial credits exist as *insurance*, not the default. Every new dependency must have a free tier.
-- **Deployable, not localhost.** The end state must run at a public URL (Cloud Run + Vercel + Qdrant Cloud).
-- **Secrets never in git.** Use `.env` locally (git-ignored) and Secret Manager / env vars in deploy.
-  Provide/maintain `.env.example` with keys but no values.
-- **Reproducibility.** Pin dependency versions. The eval harness must produce the same numbers on re-run
-  (fixed random seeds; fixed judge LLM for RAGAS — see PLAN §Eval).
-- **Rate-limit awareness.** LLM calls must go through a single wrapper with exponential backoff + jitter on
-  429s and model routing (see PLAN §LLM routing). Never fire unbounded parallel LLM calls.
+- **Free tier only.** No paid cloud resources or paid APIs without explicit approval. Every new
+  dependency and every hosted service (Render, Vercel, MongoDB Atlas, Upstash, Grafana Cloud, cron-job.org)
+  must have a genuinely free tier that needs no credit card unless flagged.
+- **Deployable, not localhost.** The end state must run at a public URL: **Render** (Node API + Socket.IO)
+  + **Vercel** (React frontend) + **MongoDB Atlas M0** + **Upstash Redis**.
+- **Secrets never in git.** Use `.env` locally (git-ignored) and the host's env/secret store in deploy
+  (Render env vars, Vercel env vars). Keep `.env.example` / `frontend/.env.example` with keys but no real values.
+  Generate a **real 32-byte `ENCRYPTION_KEY`** and a strong `JWT_SECRET` for prod — never ship the dev placeholders.
+- **Don't break what works.** 578 backend tests + the frontend Vitest suite must stay green at every layer's
+  gate. Preserve public interfaces when refactoring internals (e.g. `sessionManager`), so callers don't change.
+- **Graceful degradation is a feature, keep it.** External-service calls route through the existing
+  circuit-breaker layer (`GracefulDegradationService`). New shared-state (Redis) must **fall back to in-memory**
+  when `REDIS_URL` is unset so local dev still boots without Redis.
 
 ---
 
@@ -74,11 +83,14 @@ I must be able to explain **every non-trivial decision** in an interview. So:
 | File | Purpose |
 |---|---|
 | `CLAUDE.md` | This file — how to build (protocol, constraints, conventions). |
-| `PROJECT_PLAN.md` | What to build — problem, corpus, stack, architecture, build layers, roadmap, metrics. |
-| `DECISIONS.md` | Decision log with rationale. Update as you build. |
+| `PROJECT_PLAN.md` | What to build — problem, stack, architecture, upgrade layers, roadmap, target metrics. |
+| `DECISIONS.md` | Decision log (D-XXX) + problem log (P-XXX) with rationale. Update as you build. |
 | `PROGRESS.md` | Running state: what's done, what's next, open questions, how to resume. Update every layer. |
-| `.env.example` | Required environment variables (names only). |
-| `README.md` | Built LAST (Layer 10) — the "paper": architecture diagram, ablation tables, honest caveats. |
+| `.env.example` / `frontend/.env.example` | Required environment variables (names only). |
+| `README.md` | Updated LAST — the "paper": architecture diagram, live URLs, load-test tables, honest caveats. |
+| `backend/` | Express API, Socket.IO, models, middleware, services, utils, tests. |
+| `frontend/` | React + TypeScript + Vite app (contexts, services, components, pages). |
+| `load/` | k6 load-test scenarios + results (added in Layer 3). |
 
 At the **start of every session**: read `PROGRESS.md` first to see where we are, then continue from there.
 At the **end of every layer**: update `PROGRESS.md` (done / next / blockers) so the next session can resume cleanly.
@@ -87,15 +99,19 @@ At the **end of every layer**: update `PROGRESS.md` (done / next / blockers) so 
 
 ## 6. Coding conventions
 
-- **Language:** Python 3.11+ for backend/ML; TypeScript/React for frontend.
-- **Structure:** keep ingestion, retrieval, agent, eval, and API as separate importable modules
-  (`src/ingest/`, `src/retrieval/`, `src/agent/`, `src/eval/`, `src/api/`). No monolithic script.
-- **Config over constants:** all tunables (chunk size, top-k, RRF k, rerank top-n, model names) live in one
-  `config.py` / `config.yaml`, not scattered as magic numbers. This makes ablations trivial and defensible.
-- **Typed + documented:** type hints on public functions; a one-line docstring saying *why*, not just *what*.
-- **Test the seams:** at minimum, a smoke test per layer that the Acceptance Gate can run.
-- **Deterministic eval:** fixed seeds; log the exact model + params used for every eval run into the results file.
-- **Small commits per layer:** one logical commit (or a few) per layer with a message referencing the layer number.
+- **Language:** Node.js 18+ / Express (CommonJS) for the backend; TypeScript + React 18 + Vite for the frontend.
+- **Structure:** keep the existing module seams — `backend/{models,middleware,services,controllers,routes,utils}`
+  and `frontend/src/{contexts,services,components,hooks,pages,utils}`. Extend these; don't introduce a parallel
+  structure or a monolithic file.
+- **Config over magic numbers:** tunables (rate-limit windows, matching radii, fare constants, Redis keys/TTLs,
+  metric buckets) belong in one place per side — `backend/config/` — not scattered inline. This keeps the
+  scaling/hardening changes defensible and easy to tune.
+- **Typed + documented:** type hints on the TS side; a one-line comment saying *why*, not just *what*, on
+  non-obvious backend logic. Match the surrounding code's style and comment density.
+- **Test the seams:** every layer ships at least a smoke test its Acceptance Gate can run; existing suites stay green.
+- **Reproducible measurement:** load-test and metrics runs record the exact config (VUs, duration, target URL,
+  commit SHA) into the results file, so numbers on the resume are traceable and re-runnable.
+- **Small commits per layer:** one logical commit (or a few) per layer, message referencing the layer number.
 
 ---
 
@@ -106,5 +122,5 @@ At the **end of every layer**: update `PROGRESS.md` (done / next / blockers) so 
 - Prefer boring, well-supported libraries over clever ones. This is a portfolio project I must defend, not a playground.
 - If something in `PROJECT_PLAN.md` looks wrong, outdated, or infeasible on free tier, **flag it and stop** —
   do not silently work around it. The plan may contain assumptions that need re-verification (esp. free-tier limits).
-- Keep me in the loop on anything that spends GCP credits or approaches a free-tier limit.
+- Keep me in the loop on anything that spends money or approaches a free-tier limit.
 - When running shell commands, don't dump the whole output into your context and instead limit it using head or tail with how much you might need 

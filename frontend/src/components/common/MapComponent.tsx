@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents, Polyline } from 'react-leaflet';
 import L, { LeafletMouseEvent } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -75,42 +75,23 @@ const MapComponent: React.FC<MapComponentProps> = ({
   className = '',
   showRoute = true
 }) => {
-  const [mapboxError, setMapboxError] = useState(false);
   const mapRef = useRef<L.Map>(null);
 
-  // Check if Mapbox token is available and valid
-  const mapboxToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
-  const isValidMapboxToken = mapboxToken &&
-    // Debug: log the route being passed
-    React.useEffect(() => {
-      if (route && route.length > 1) {
-        // Log first and last point for sanity
-        console.log('MapComponent: route received', route[0], '...', route[route.length - 1]);
-      } else if (route) {
-        console.log('MapComponent: route received but too short', route);
-      } else {
-        console.log('MapComponent: no route, will use straight line');
-      }
-    }, [route]);
-
-  mapboxToken.startsWith('pk.') &&
-    mapboxToken !== 'your_mapbox_token_here' &&
-    mapboxToken !== 'pk.your_mapbox_access_token_here';
-  const useMapbox = isValidMapboxToken && !mapboxError;
-
-  // Tile layer configuration
-  const tileLayerUrl = useMapbox
-    ? `https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/{z}/{x}/{y}?access_token=${mapboxToken}`
-    : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-
-  // Attribution strings are omitted to avoid TS type friction in some setups
-
-  // Handle tile loading errors (fallback to OSM)
-  const handleTileError = () => {
-    if (useMapbox) {
-      setMapboxError(true);
+  // Debug: log the route being passed
+  useEffect(() => {
+    if (route && route.length > 1) {
+      // Log first and last point for sanity
+      console.log('MapComponent: route received', route[0], '...', route[route.length - 1]);
+    } else if (route) {
+      console.log('MapComponent: route received but too short', route);
+    } else {
+      console.log('MapComponent: no route, will use straight line');
     }
-  };
+  }, [route]);
+
+  // OSM tiles only — Mapbox support was never wired to a real deploy target and
+  // its token-validation logic was broken (crashed when the token was unset).
+  const tileLayerUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
   // Update map view when center changes
   useEffect(() => {
@@ -144,10 +125,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         style={{ height: '100%', width: '100%' }}
         ref={mapRef}
       >
-        <TileLayer
-          url={tileLayerUrl}
-          eventHandlers={{ tileerror: handleTileError }}
-        />
+        <TileLayer url={tileLayerUrl} />
 
         <MapClickHandler
           onLocationSelect={onLocationSelect}
@@ -208,12 +186,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
           />
         )}
       </MapContainer>
-
-      {mapboxError && (
-        <div className="map-fallback-notice">
-          <small>Using OpenStreetMap tiles (Mapbox unavailable)</small>
-        </div>
-      )}
     </div>
   );
 };
