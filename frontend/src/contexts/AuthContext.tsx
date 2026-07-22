@@ -9,7 +9,8 @@ type AuthAction =
   | { type: 'AUTH_FAILURE'; payload: string }
   | { type: 'LOGOUT' }
   | { type: 'UPDATE_USER'; payload: User }
-  | { type: 'SET_LOADING'; payload: boolean };
+  | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'UPDATE_TOKEN'; payload: string };
 
 // Auth Context Type
 interface AuthContextType extends AuthState {
@@ -70,6 +71,11 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
       return {
         ...state,
         isLoading: action.payload,
+      };
+    case 'UPDATE_TOKEN':
+      return {
+        ...state,
+        token: action.payload,
       };
     default:
       return state;
@@ -157,6 +163,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (!response.success) {
         dispatch({ type: 'AUTH_FAILURE', payload: response.error?.message || 'Registration failed' });
+      } else {
+        // Registration success only completes the phone step (OTP verification logs
+        // the user in) — clear loading so the app isn't stuck showing a spinner
+        dispatch({ type: 'SET_LOADING', payload: false });
       }
 
       return response;
@@ -221,6 +231,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Check auth status on mount
   useEffect(() => {
     checkAuthStatus();
+  }, []);
+
+  // Keep context state in sync when apiClient picks up a silently-rotated token
+  useEffect(() => {
+    const handleTokenRotated = (e: Event) => {
+      const token = (e as CustomEvent<{ token: string }>).detail?.token;
+      if (token) {
+        dispatch({ type: 'UPDATE_TOKEN', payload: token });
+      }
+    };
+    window.addEventListener('auth:token-rotated', handleTokenRotated);
+    return () => window.removeEventListener('auth:token-rotated', handleTokenRotated);
   }, []);
 
   const value: AuthContextType = {

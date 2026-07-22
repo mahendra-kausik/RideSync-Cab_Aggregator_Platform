@@ -288,3 +288,46 @@
   explicitly mock `sessionManager.validateSession` per-case — it was previously passing only because of
   unintentional mock-state leakage between tests (`jest.clearAllMocks()` doesn't reset `mockResolvedValue`
   implementations). Fixed the test to mock explicitly rather than rely on leakage. All 163 tests pass; lint 0/0.
+
+## D-009 — Fixed 3 frontend logic bugs (map center, token rotation, stuck spinner)
+- **Date / Layer:** 2026-07-22 / Pre-Layer-2 cleanup (follow-up to D-008)
+- **Context:** User asked for the same logic audit on the frontend. Parallel subagent spawning was blocked by
+  the session's permission classifier for this task, so the audit was done directly (same rigor, sequential)
+  across contexts, pages, components, hooks, and services.
+- **Decision:** Fixed all 3 confirmed bugs:
+  1. `MapComponent.tsx` — the `center` prop follows the component's own `[lng, lat]` convention (matching
+     `pickup`/`destination`/`driverLocation`, all GeoJSON-style and explicitly flipped before being handed to
+     Leaflet markers), but `center` itself was passed straight into `<MapContainer center={center}>` and
+     `mapRef.current.setView(center, zoom)` — both native Leaflet APIs expecting `[lat, lng]`. Both callers
+     (`RiderBookPage`, `DriverDashboardPage`) pass `[lng, lat]` consistent with the rest of the app, so the
+     map's actual center/pan target was wrong on every load (e.g. Bengaluru `[77.59, 12.97]` read as lat
+     77.59°/lng 12.97° — nowhere near India), even though markers on the same map rendered correctly. Fixed by
+     flipping to `[center[1], center[0]]` at both Leaflet call sites, keeping the prop's public convention
+     unchanged for callers.
+  2. `apiClient.ts` / `AuthContext.tsx` — the backend's `sessionManager` silently rotates tokens once they
+     cross a 12h age threshold, blacklisting the old one and returning new tokens via
+     `X-New-Access-Token`/`X-New-Refresh-Token` response headers (see D-008 item 6). Nothing in the frontend
+     ever read these headers, so the next request after a rotation used the now-blacklisted old token and was
+     rejected, forcing an unexpected logout — exactly the disruptive behavior `apiClient.ts`'s 401 handler
+     explicitly tries to avoid. Fixed by having the response interceptor persist a rotated access token to
+     `localStorage` and broadcast a `window` `CustomEvent('auth:token-rotated')`; `AuthContext` listens for it
+     and updates its `token` state via a new `UPDATE_TOKEN` reducer action, so `SocketContext`'s socket-auth
+     handshake (which reads `token` from `useAuth()`, not `localStorage`) also stays current. Used a window
+     event as the bridge because `apiClient.ts` is a plain module outside the React tree and has no direct
+     access to the context's `dispatch`.
+  3. `AuthContext.register()` — dispatched `AUTH_START` (`isLoading: true`) but never cleared it on the
+     success path (only the OTP step's `AUTH_SUCCESS`/failure resets loading). If a user completed the phone
+     step but abandoned the OTP step, `isLoading` stayed `true` for the rest of the SPA session, and
+     `ProtectedRoute` (which gates on that same context value) would show an infinite spinner instead of
+     redirecting to login on any later navigation. Fixed by dispatching `SET_LOADING: false` on the register
+     success branch.
+- **Why:** Bug 1 is the highest-impact of the three — it's the kind of thing that's easy to miss visually
+  during dev (markers still show up in roughly the right relative position to each other) but breaks the map's
+  actual framing for every user. Bugs 2 and 3 are both "works fine in a 10-minute manual test, breaks hours
+  later" classes of bug — exactly what this audit was for.
+- **Alternatives considered:** For bug 2, storing the refresh token client-side and building a real
+  refresh-and-retry flow (rejected — the app doesn't currently persist a refresh token at all, and building
+  that flow is a bigger, separately-reviewable change; the header-capture fix matches what the backend already
+  implements and requires no new backend work).
+- **Tradeoffs / risks:** None found; `tsc --noEmit` clean, `eslint` clean (11 pre-existing warnings unrelated
+  to touched files, under the 15 cap), all 59 frontend tests pass.

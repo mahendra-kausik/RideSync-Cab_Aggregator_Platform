@@ -87,6 +87,14 @@ clean end-to-end.
   input-sanitization middleware that reads `req.body` (`server.js` — sanitization was silently no-op-ing on
   every POST/PUT body), and a broken `User.updateRating` that violated its own schema's `max: 5` constraint.
   All fixed, all 163 tests still pass, lint 0/0.
+- **Frontend logic audit (D-009):** found and fixed 3 real bugs: `MapComponent`'s `center` prop was passed to
+  Leaflet un-flipped (component convention is `[lng, lat]`, Leaflet needs `[lat, lng]`) — the map centered/
+  panned to the wrong spot on the globe on every load, even though markers rendered correctly. The backend's
+  silent 12h token-rotation headers (`X-New-Access-Token`) were never read anywhere in the frontend, causing
+  an unexpected forced logout once a session crossed that age. `AuthContext.register()` never cleared
+  `isLoading` on its success path, so an abandoned registration (phone step done, OTP step skipped) left
+  `ProtectedRoute` stuck showing a spinner forever. All fixed; `tsc --noEmit` clean, lint clean, 59 frontend
+  tests pass.
 
 ## Decisions log (one-line index — full entries in `DECISIONS.md`)
 - D-001 — Hosting = Render + Vercel + Atlas M0 + Upstash Redis (free, no card, native WebSocket).
@@ -99,6 +107,7 @@ clean end-to-end.
 - P-002 — Demo-account login 401 on fresh Atlas deploy (seed data never migrated).
 - D-007 — Backend lint cleanup: zero-warning gate + implemented admin ride search.
 - D-008 — Fixed 8 logic bugs from full backend audit (races, auth fail-open, body-parser order, schema bug).
+- D-009 — Fixed 3 frontend logic bugs (map center lat/lng swap, unhandled token rotation, stuck register spinner).
 
 ## How to resume
 1. Read this file, then `CLAUDE.md`, then the relevant section of `PROJECT_PLAN.md`.

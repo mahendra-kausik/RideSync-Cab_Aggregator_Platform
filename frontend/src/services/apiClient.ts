@@ -71,6 +71,16 @@ apiClient.interceptors.response.use(
     if (import.meta.env.DEV) {
       console.log(`✅ ${response.config.method?.toUpperCase()} ${response.config.url} - ${response.status}`);
     }
+
+    // Backend silently rotates tokens once they cross its rotation threshold and
+    // blacklists the old one — if we don't pick up the new token here, the very
+    // next request gets rejected as invalidated, forcing an unwanted logout.
+    const newAccessToken = response.headers['x-new-access-token'];
+    if (newAccessToken) {
+      localStorage.setItem('token', newAccessToken);
+      window.dispatchEvent(new CustomEvent('auth:token-rotated', { detail: { token: newAccessToken } }));
+    }
+
     return response;
   },
   async (error: AxiosError) => {

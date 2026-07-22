@@ -94,9 +94,11 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const tileLayerUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
   // Update map view when center changes
+  // `center` follows this component's [lng, lat] convention (matching the other
+  // coordinate props); Leaflet's setView expects [lat, lng], so flip it here.
   useEffect(() => {
     if (mapRef.current) {
-      mapRef.current.setView(center, zoom);
+      mapRef.current.setView([center[1], center[0]], zoom);
     }
   }, [center, zoom]);
 
@@ -120,7 +122,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
   return (
     <div className={`map-container ${className}`} style={{ height }}>
       <MapContainer
-        center={center}
+        center={[center[1], center[0]]}
         zoom={zoom}
         style={{ height: '100%', width: '100%' }}
         ref={mapRef}
