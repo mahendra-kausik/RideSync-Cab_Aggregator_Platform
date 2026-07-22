@@ -5,16 +5,16 @@
 > lives in `DECISIONS.md`; headline numbers + architecture live in `README.md`.
 
 ## Current status
-**Layer 0 shipped. Layer 1 (deploy to public URL) in progress — two pre-deploy code fixes done; hosted-account
-setup (Render/Vercel/Atlas/Upstash/cron) still pending, needs the user.**
-- **Not yet deployed** — app currently runs only via Docker Compose. Public URL is the Layer 1 deliverable.
+**Layer 1 shipped — app is live on a public URL.** One open follow-up: demo-account login 401s on the fresh
+Atlas DB (see P-002 / Open items) — needs a decision (seed script vs. real sign-up) before the gate is fully
+clean end-to-end.
 - **Baseline being upgraded:** working MERN cab-aggregator, 578 backend tests (~72% coverage), real-time
   Socket.IO, geospatial matching, AES-256-GCM PII encryption, circuit-breaker graceful degradation.
 
 ## Layer checklist
 - [x] **Layer 0 — Retarget operating docs** (CLAUDE.md, PROJECT_PLAN.md, PROGRESS.md, DECISIONS.md rewritten
       from the previous DocsGPT project to RideSync; working-protocol instructions preserved).
-- [ ] **Layer 1 — Deploy to a public URL** ← IN PROGRESS
+- [x] **Layer 1 — Deploy to a public URL**
       - [x] Fixed `MapComponent.tsx` pre-deploy crash risk (broken Mapbox-token logic → OSM-only); verified via `npm run build`.
       - [x] Deleted dead/unused `calculateFare` duplicate in `rideController.js` (was never called — not a live bug); verified via `services-fare.test.js` + `rides-api.test.js` (51/51 pass).
       - [x] `backend/scripts/ensure-indexes.js` written (syncs indexes already declared in `User`/`Ride`/`OTP`
@@ -34,18 +34,28 @@ setup (Render/Vercel/Atlas/Upstash/cron) still pending, needs the user.**
             of always spinning up `mongodb-memory-server` (binary-download flakiness on fresh CI VMs). See
             P-001. Verified both DB-connection branches locally; awaiting a live CI run to confirm end-to-end
             (last checked run was still red on the pre-fix `mongodb-memory-server` path).
-      - [ ] **Needs you:** create the hosted accounts (see checklist below), then hand me the connection strings /
-            URLs so I can finish env wiring and run the Layer 1 gate.
-      - [ ] cron-job.org keep-warm ping (needs the live Render URL first).
+      - [x] Hosted accounts created: MongoDB Atlas M0 (AWS, N. Virginia), Upstash Redis (Virginia, eviction on),
+            Render Web Service (Virginia), Vercel (frontend). All env vars wired (see D-005 for region choices).
+      - [x] `RENDER_DEPLOY_HOOK` added as a GitHub Actions repo secret — CI auto-deploys to Render on push to
+            `main`.
+      - [x] cron-job.org keep-warm ping created (`GET /health` every 10 min) against the live Render URL.
+      - [x] `.env.example` / `frontend/.env.example` cleaned up: fixed stale `VITE_API_URL` → `VITE_API_BASE_URL`
+            (didn't match the actual code, `apiClient.ts:35`) and de-duplicated `frontend/.env.example`.
+      - [ ] **Open:** demo-account login returns 401 against the fresh Atlas DB — old demo users were seeded
+            into the previous local/Docker Mongo, not Atlas. See P-002. Needs a decision: run
+            `backend/scripts/seed.js` against the Atlas `MONGO_URI`, or verify via the app's real sign-up flow
+            instead.
 - [ ] Layer 2 — Redis shared-state layer (sessions + rate limit + Socket.IO adapter; in-memory fallback).
 - [ ] Layer 3 — Load testing with k6 (req/s, p95, concurrent WS, circuit-breaker trip).
 - [ ] Layer 4 — Observability (prom-client /metrics + Grafana Cloud + correlation IDs).
 - [ ] Layer 5 — README-as-paper & resume bullets.
 
 ## Deployed system — quick reference (fill in as layers ship)
-- **Live UI:** _(pending Layer 1 — Vercel)_
-- **Live API:** _(pending Layer 1 — Render, `/health`, `/api/*`)_
-- **Stack:** React + TS + Vite (frontend) · Node + Express + Socket.IO (backend) · MongoDB Atlas M0 · Upstash Redis.
+- **Live UI:** https://ride-sync-cab-aggregator-platform-f.vercel.app
+- **Live API:** https://ridesync-cab-aggregator-platform.onrender.com (`/health`, `/api/*`)
+- **Stack:** React + TS + Vite (frontend) · Node + Express + Socket.IO (backend) · MongoDB Atlas M0 (AWS
+  N. Virginia) · Upstash Redis (Virginia, not yet consumed by app code — Layer 2). Full env var reference
+  kept in the git-ignored root `.env` (never committed; see D-005 for region rationale).
 - **Repo:** `origin` = https://github.com/mahendra-kausik/RideSync-Cab_Aggregator_Platform.git.
   Commits authored by user only (no Claude co-author).
 - **Env:** Windows 11 / PowerShell. Backend start: `node server.js` (`npm start`); dev: `nodemon` (`npm run dev`).
@@ -56,17 +66,20 @@ setup (Render/Vercel/Atlas/Upstash/cron) still pending, needs the user.**
 - **Remaining Layer 1 code work:** none blocking — rest of Layer 1 is hosted-account creation + env wiring.
 
 ## Open items
-- **Needs the user** — hosted account creation Claude cannot do: Render Web Service, Vercel project, MongoDB
-  Atlas M0 cluster, Upstash Redis instance, cron-job.org keep-warm schedule. Claude will prepare configs/scripts
-  and hand over an exact checklist.
-- All Layer 1 hosting free-tier limits still to be verified live (see PROJECT_PLAN §8).
-- Real prod secrets to generate before first deploy: 32-byte `ENCRYPTION_KEY`, strong `JWT_SECRET`
-  (the `SecurityValidator` prod gate will reject weak/placeholder values).
+- **P-002:** demo-account login 401s against Atlas (old demo users never migrated from local Mongo). Needs a
+  decision: run `seed.js` against Atlas, or use the app's real sign-up flow instead.
+- Layer 1 hosting free-tier limits confirmed live in practice (Render cold-start behavior, Atlas M0, Upstash
+  free tier) — no surprises hit so far.
 
 ## Decisions log (one-line index — full entries in `DECISIONS.md`)
 - D-001 — Hosting = Render + Vercel + Atlas M0 + Upstash Redis (free, no card, native WebSocket).
 - D-002 — Redis for shared state (sessions + rate limit + sockets) with in-memory fallback.
 - D-003 — `@socket.io/redis-adapter` over sticky sessions for cross-instance socket delivery.
+- D-004 — Explicit `ensure-indexes.js` script + `autoIndex: false` in production.
+- D-005 — Hosted-service regions: Render/Upstash Virginia, Atlas AWS N. Virginia.
+- D-006 — GCP Cloud Run considered and rejected for the 3-4 month placement-season lifespan; stayed on Render free.
+- P-001 — CI/CD build job fixes (typescript pin, eslint config, Mongo test wiring).
+- P-002 — Demo-account login 401 on fresh Atlas deploy (seed data never migrated).
 
 ## How to resume
 1. Read this file, then `CLAUDE.md`, then the relevant section of `PROJECT_PLAN.md`.

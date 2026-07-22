@@ -167,3 +167,53 @@
   falling back to `MongoMemoryServer` only when unset (local dev without Docker). Verified both branches
   directly: 163/163 passing via the in-memory fallback, and 154/154 (unit project) passing via a throwaway
   Mongo instance fed in through `MONGO_URI` to exercise the direct-connect branch end-to-end.
+
+## D-005 — Hosted-service regions: Render Virginia, Upstash Redis Virginia, Atlas AWS N. Virginia
+- **Date / Layer:** 2026-07-22 / Layer 1
+- **Context:** Render, Atlas, and Upstash each offer a different set of free-tier regions (no region is common
+  to all three, and none offer India). Region choice affects latency between hops.
+- **Decision:** Render → Virginia; Upstash Redis → Virginia (exact match with Render); Atlas → AWS, N. Virginia
+  (us-east-1) — closest same-coast option since Atlas has no plain "Virginia" choice, only cloud-specific ones.
+- **Why:** Redis is on the hottest path (sessions, rate limiting, Socket.IO adapter — touched almost every
+  request), so an exact-region match with the backend matters most there. Mongo is one hop per DB query, so a
+  same-coast near-match (Virginia ↔ Atlas's N. Virginia) is an acceptable small tax by comparison. The user's
+  own physical location (India) is irrelevant to this choice — the hot path is server-to-server, not
+  browser-to-server, and Upstash/Render don't offer an India region on free tier regardless.
+- **Alternatives considered:** Matching everything to Singapore (closest to the user) — rejected because
+  Upstash's free tier has no Singapore region, making it the binding constraint; optimizing for the user's own
+  request latency instead of the Render↔Redis↔Atlas server-side path — rejected as the wrong thing to optimize
+  for a deployed service.
+- **Tradeoffs / risks:** None material — this is a portfolio-scale app with a single instance and single region
+  throughout the hot path; the only real risk is if this were a multi-region user base, which is out of scope.
+
+## D-006 — GCP Cloud Run considered and rejected for the 3-4 month placement-season lifespan
+- **Date / Layer:** 2026-07-22 / Layer 1
+- **Context:** User clarified the deployed app only needs to stay live ~3-4 months (placement/interview season),
+  which reopened whether to spend the user's GCP $300 trial credit on an always-warm Cloud Run backend instead
+  of Render's free tier (which cold-sleeps after ~15 min idle).
+- **Decision:** Stay on Render free tier (per D-001), not Cloud Run.
+- **Why:** Cloud Run would cost real money from the credit (~$15-60/month range depending on the "CPU always
+  allocated" setting) to eliminate a cold-start risk that's already mitigated for free by the cron-job.org
+  keep-warm ping. Per `CLAUDE.md`'s free-tier-only constraint, any real spend needs explicit approval, and the
+  user chose to stay free rather than spend credit on a marginal demo-smoothness improvement.
+- **Alternatives considered:** GCP Cloud Run with `minInstances=1` (rejected — real cost, even if small);
+  GCP credit toward Atlas/Upstash directly (not applicable — those services' free tiers aren't billed through
+  the user's own GCP account regardless of cloud provider chosen inside their dashboards).
+- **Tradeoffs / risks:** Small residual cold-start risk (~30-50s) if a request lands in a gap the keep-warm ping
+  doesn't cover (e.g. ping failure, Render maintenance). Accepted as the free-tier tradeoff already logged in
+  D-001.
+
+## P-002 — Demo-account login returns 401 on fresh Atlas deploy
+- **Date / Layer:** 2026-07-22 / Layer 1
+- **Context:** After Vercel/Render/Atlas were all wired up and reachable (no CORS/network errors), logging in
+  with the demo accounts shown on the sign-in screen (e.g. `+1234567890`) failed with `401 Unauthorized` on
+  `POST /auth/login-phone`.
+- **Action:** Diagnosed as expected behavior, not a bug: those demo accounts were seeded (`backend/scripts/seed.js`)
+  into the old local/Docker MongoDB, never into the newly created Atlas `ridesync` database. The 401 confirms
+  the request pipeline (Vercel → Render → Atlas) works correctly — it's a real "user not found" rejection, not
+  a connectivity failure.
+- **Why:** Documented instead of silently patching, since the fix depends on a still-open user choice: run
+  `seed.js` against the Atlas `MONGO_URI` to recreate the demo accounts, or use the app's own sign-up flow to
+  create a real account (arguably a better end-to-end smoke test).
+- **Tradeoffs / risks (if applicable):** None yet — no fix applied pending the user's choice of which path to
+  take.
