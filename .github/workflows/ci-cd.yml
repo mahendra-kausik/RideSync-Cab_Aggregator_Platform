@@ -43,10 +43,10 @@ jobs:
       - name: Set CI env defaults (use secrets when provided)
         run: |
           # Prefer repository secrets when available, otherwise use safe defaults for CI
-          if [ -n "${{ secrets.MONGODB_URI }}" ]; then
-            echo "MONGODB_URI=${{ secrets.MONGODB_URI }}" >> $GITHUB_ENV
+          if [ -n "${{ secrets.MONGO_URI }}" ]; then
+            echo "MONGO_URI=${{ secrets.MONGO_URI }}" >> $GITHUB_ENV
           else
-            echo "MONGODB_URI=mongodb://127.0.0.1:27017/cab-aggregator-test" >> $GITHUB_ENV
+            echo "MONGO_URI=mongodb://127.0.0.1:27017/cab-aggregator-test" >> $GITHUB_ENV
           fi
 
           if [ -n "${{ secrets.JWT_SECRET }}" ]; then

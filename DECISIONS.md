@@ -153,3 +153,17 @@
   block (a real MongoDB Memory Server is connected globally in `setup.js`, so once the flag is cleared the
   function reaches `_validateCoordinates`, throws, and the catch block sets `error: 'MATCHING_SERVICE_ERROR'`
   as expected). All 163 backend tests now pass.
+- **Follow-up 3:** even with the above fixed, CI's `Run backend tests` step was still expected to be unreliable
+  because of a genuine CI-workflow bug, unrelated to any app code: `.github/workflows/ci-cd.yml` provisions a
+  real `mongo:6.0` service container and TCP-health-checks it before running tests, but `__tests__/setup.js`
+  never used it — it always spun up its own `mongodb-memory-server`, which downloads a MongoDB binary at
+  runtime on every fresh CI VM (no persistent cache), a well-known source of CI-only flakiness/timeouts that
+  never reproduces locally (binary already cached there). Separately, the workflow also exported the env var
+  under the wrong name (`MONGODB_URI`) — the app and every other script (`config/database.js`,
+  `scripts/reset-password.js`, `utils/securityValidator.js`) consistently use `MONGO_URI`, so the value was
+  never actually read even before this fix.
+- **Fix:** renamed the CI env var to `MONGO_URI` (matches the app's convention everywhere else); `setup.js` now
+  connects directly to `process.env.MONGO_URI` when set (the CI-provided, already-health-checked service),
+  falling back to `MongoMemoryServer` only when unset (local dev without Docker). Verified both branches
+  directly: 163/163 passing via the in-memory fallback, and 154/154 (unit project) passing via a throwaway
+  Mongo instance fed in through `MONGO_URI` to exercise the direct-connect branch end-to-end.

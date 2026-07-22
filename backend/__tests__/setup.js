@@ -9,15 +9,23 @@ process.env.DISABLE_MATCHING = 'true'; // Disable background matching in tests
 
 let mongoServer;
 
-// Setup MongoDB Memory Server before all tests
+// Use a real MongoDB (e.g. the CI-provided service container) when MONGO_URI is set;
+// otherwise fall back to an in-memory server for local dev without Docker.
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  const mongoUri = mongoServer.getUri();
+  const mongoUri = process.env.MONGO_URI;
 
-  await mongoose.connect(mongoUri, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  });
+  if (mongoUri) {
+    await mongoose.connect(mongoUri, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+  } else {
+    mongoServer = await MongoMemoryServer.create();
+    await mongoose.connect(mongoServer.getUri(), {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+  }
 });
 
 // Clean up database between tests

@@ -29,8 +29,11 @@ setup (Render/Vercel/Atlas/Upstash/cron) still pending, needs the user.**
             `frontend/` and `backend/.eslintrc.json` rules that never matched the codebase's actual
             (inconsistent) style; cleaned up real mechanical lint violations on both sides; fixed the 2
             pre-existing `services-matching.test.js` failures (a real test/`DISABLE_MATCHING`-flag interaction
-            bug, not just pre-existing noise). See P-001. CI-CD now green end to end: frontend lint/build/audit,
-            backend lint/tests (163/163) all pass.
+            bug, not just pre-existing noise); fixed `ci-cd.yml` exporting `MONGODB_URI` (app expects
+            `MONGO_URI` everywhere) and `setup.js` ignoring the CI-provided `mongo` service container in favor
+            of always spinning up `mongodb-memory-server` (binary-download flakiness on fresh CI VMs). See
+            P-001. Verified both DB-connection branches locally; awaiting a live CI run to confirm end-to-end
+            (last checked run was still red on the pre-fix `mongodb-memory-server` path).
       - [ ] **Needs you:** create the hosted accounts (see checklist below), then hand me the connection strings /
             URLs so I can finish env wiring and run the Layer 1 gate.
       - [ ] cron-job.org keep-warm ping (needs the live Render URL first).
