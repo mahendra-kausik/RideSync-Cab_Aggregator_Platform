@@ -79,7 +79,9 @@ const RiderMyRides: React.FC = () => {
 
     const handleViewDetails = async (rideId: string) => {
         const ride = rides.find(r => r._id === rideId);
-        if (!ride) return;
+        if (!ride) {
+          return;
+        }
 
         setSelectedRide(ride);
 
@@ -170,7 +172,7 @@ const RiderMyRides: React.FC = () => {
                     <h3>No rides found</h3>
                     <p>
                         {filterStatus === 'all'
-                            ? "You haven't taken any rides yet."
+                            ? 'You haven\'t taken any rides yet.'
                             : `You don't have any ${filterStatus} rides.`}
                     </p>
                     <button className="btn-primary" onClick={() => navigate('/rider/book')}>

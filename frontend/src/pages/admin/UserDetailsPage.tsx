@@ -24,7 +24,9 @@ const UserDetailsPage: React.FC = () => {
     }, [currentUser, navigate, userId]);
 
     const loadUserDetails = async () => {
-        if (!userId) return;
+        if (!userId) {
+          return;
+        }
 
         try {
             setLoading(true);
@@ -42,10 +44,14 @@ const UserDetailsPage: React.FC = () => {
     };
 
     const handleUserAction = async (action: 'suspend' | 'reactivate') => {
-        if (!user) return;
+        if (!user) {
+          return;
+        }
 
         const reason = prompt(`Please provide a reason for ${action}ing this user:`);
-        if (reason === null) return;
+        if (reason === null) {
+          return;
+        }
 
         try {
             if (action === 'suspend') {

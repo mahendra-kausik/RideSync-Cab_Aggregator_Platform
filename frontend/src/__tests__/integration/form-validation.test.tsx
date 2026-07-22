@@ -18,7 +18,7 @@ const MockLoginForm = ({ onSubmit }: { onSubmit: (data: any) => void }) => {
 
         if (!phone) {
             newErrors.phone = 'Phone number is required';
-        } else if (!/^\+?[\d\s\-\(\)]{10,}$/.test(phone)) {
+        } else if (!/^\+?[\d\s\-()]{10,}$/.test(phone)) {
             newErrors.phone = 'Invalid phone number format';
         }
 

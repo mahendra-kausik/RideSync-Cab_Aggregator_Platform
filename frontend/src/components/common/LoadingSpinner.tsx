@@ -6,9 +6,9 @@ interface LoadingSpinnerProps {
   message?: string;
 }
 
-export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({ 
-  size = 'medium', 
-  message = 'Loading...' 
+export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
+  size = 'medium',
+  message = 'Loading...'
 }) => {
   return (
     <div className="loading-container">

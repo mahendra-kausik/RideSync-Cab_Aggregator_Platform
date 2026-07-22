@@ -101,7 +101,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <p className="error-boundary__message">
               We're sorry, but something unexpected happened. Please try again.
             </p>
-            
+
             {process.env.NODE_ENV === 'development' && this.state.error && (
               <details className="error-boundary__details">
                 <summary>Error Details (Development Only)</summary>
@@ -120,13 +120,13 @@ export class ErrorBoundary extends Component<Props, State> {
             )}
 
             <div className="error-boundary__actions">
-              <button 
+              <button
                 onClick={this.handleRetry}
                 className="error-boundary__button error-boundary__button--primary"
               >
                 Try Again
               </button>
-              <button 
+              <button
                 onClick={this.handleReload}
                 className="error-boundary__button error-boundary__button--secondary"
               >
@@ -157,7 +157,7 @@ export function withErrorBoundary<P extends object>(
   );
 
   WrappedComponent.displayName = `withErrorBoundary(${Component.displayName || Component.name})`;
-  
+
   return WrappedComponent;
 }
 
@@ -167,7 +167,7 @@ export function withErrorBoundary<P extends object>(
 export function useErrorHandler() {
   return (error: Error, errorInfo?: ErrorInfo) => {
     console.error('🚨 Manual error report:', error);
-    
+
     if (errorInfo) {
       console.error('Error Info:', errorInfo);
     }

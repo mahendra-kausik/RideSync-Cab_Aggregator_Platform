@@ -161,11 +161,21 @@ class AdminService {
     search?: string;
   }): Promise<PaginatedResponse<User>> {
     const queryParams = new URLSearchParams();
-    if (params?.page) queryParams.append('page', params.page.toString());
-    if (params?.limit) queryParams.append('limit', params.limit.toString());
-    if (params?.role) queryParams.append('role', params.role);
-    if (params?.status) queryParams.append('status', params.status);
-    if (params?.search) queryParams.append('search', params.search);
+    if (params?.page) {
+      queryParams.append('page', params.page.toString());
+    }
+    if (params?.limit) {
+      queryParams.append('limit', params.limit.toString());
+    }
+    if (params?.role) {
+      queryParams.append('role', params.role);
+    }
+    if (params?.status) {
+      queryParams.append('status', params.status);
+    }
+    if (params?.search) {
+      queryParams.append('search', params.search);
+    }
 
     const response = await apiClient.get(`/users/admin/users?${queryParams}`);
     return {
@@ -203,12 +213,24 @@ class AdminService {
     endDate?: string;
   }): Promise<PaginatedResponse<Ride>> {
     const queryParams = new URLSearchParams();
-    if (params?.page) queryParams.append('page', params.page.toString());
-    if (params?.limit) queryParams.append('limit', params.limit.toString());
-    if (params?.status) queryParams.append('status', params.status);
-    if (params?.search) queryParams.append('search', params.search);
-    if (params?.startDate) queryParams.append('startDate', params.startDate);
-    if (params?.endDate) queryParams.append('endDate', params.endDate);
+    if (params?.page) {
+      queryParams.append('page', params.page.toString());
+    }
+    if (params?.limit) {
+      queryParams.append('limit', params.limit.toString());
+    }
+    if (params?.status) {
+      queryParams.append('status', params.status);
+    }
+    if (params?.search) {
+      queryParams.append('search', params.search);
+    }
+    if (params?.startDate) {
+      queryParams.append('startDate', params.startDate);
+    }
+    if (params?.endDate) {
+      queryParams.append('endDate', params.endDate);
+    }
 
     const response = await apiClient.get(`/users/admin/rides?${queryParams}`);
     return {

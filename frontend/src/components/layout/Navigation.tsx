@@ -5,7 +5,9 @@ import './Navigation.css';
 export const Navigation: React.FC = () => {
   const { user } = useAuth();
 
-  if (!user) return null;
+  if (!user) {
+    return null;
+  }
 
   const getNavigationItems = () => {
     switch (user.role) {

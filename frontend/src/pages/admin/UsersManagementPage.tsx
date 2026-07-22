@@ -64,7 +64,9 @@ const UsersManagementPage: React.FC = () => {
         }
 
         const reason = prompt(`Please provide a reason for ${action}ing this user:`);
-        if (reason === null) return; // User cancelled
+        if (reason === null) {
+          return;
+        } // User cancelled
 
         try {
             if (action === 'suspend') {

@@ -85,6 +85,8 @@ export const capitalizeWords = (str: string): string => {
  * Truncate text with ellipsis
  */
 export const truncateText = (text: string, maxLength: number): string => {
-  if (text.length <= maxLength) return text;
+  if (text.length <= maxLength) {
+    return text;
+  }
   return text.substr(0, maxLength) + '...';
 };

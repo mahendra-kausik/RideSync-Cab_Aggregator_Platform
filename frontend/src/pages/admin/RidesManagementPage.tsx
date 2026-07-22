@@ -73,7 +73,9 @@ const RidesManagementPage: React.FC = () => {
 
     const handleViewDetails = async (rideId: string) => {
         const ride = rides.find(r => r._id === rideId);
-        if (!ride) return;
+        if (!ride) {
+          return;
+        }
 
         setSelectedRide(ride);
 

@@ -148,7 +148,7 @@ const RatingForm: React.FC<RatingFormProps> = ({
             id="feedback"
             value={feedback}
             onChange={(e) => setFeedback(e.target.value)}
-            placeholder={`Share your experience...`}
+            placeholder={'Share your experience...'}
             maxLength={500}
             rows={4}
             disabled={isSubmitting}

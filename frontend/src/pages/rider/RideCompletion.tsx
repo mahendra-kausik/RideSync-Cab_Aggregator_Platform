@@ -166,7 +166,9 @@ const RideCompletion: React.FC = () => {
     try {
       // Clear any persisted active ride so booking page resets to initial state
       localStorage.removeItem('currentRideId');
-    } catch { }
+    } catch {
+      // ignore — best-effort cleanup
+    }
     // Force a full page reload to reset all state
     window.location.href = '/rider/book';
   };

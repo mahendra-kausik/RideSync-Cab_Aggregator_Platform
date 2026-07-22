@@ -248,7 +248,9 @@ const DriverDashboardPage: React.FC = () => {
   };
 
   const handleRideStatusUpdate = async (status: Ride['status']) => {
-    if (!activeRide) return;
+    if (!activeRide) {
+      return;
+    }
 
     try {
       const updatedRide = await rideService.updateRideStatus(activeRide._id, status);

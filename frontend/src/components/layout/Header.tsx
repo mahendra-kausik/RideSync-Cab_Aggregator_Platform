@@ -31,7 +31,7 @@ export const Header: React.FC<HeaderProps> = ({ title }) => {
             </span>
           </div>
         </div>
-        
+
         {user && (
           <div className="header-right">
             <div className="user-info">

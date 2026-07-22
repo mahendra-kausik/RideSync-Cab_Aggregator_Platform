@@ -31,10 +31,10 @@ export function useErrorHandler(options: ErrorHandlerOptions = {}) {
 
   const handleError = useCallback((error: ApiError | Error | any, context?: string) => {
     const errorId = `error_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     // Normalize error object
     let normalizedError: ApiError;
-    
+
     if (error?.code && error?.message) {
       // Already an ApiError
       normalizedError = error as ApiError;
@@ -266,7 +266,7 @@ export function useAsyncError() {
 /**
  * Higher-order function to wrap async functions with error handling
  */
-export function withErrorHandling<T extends (...args: any[]) => Promise<any>>(
+export function withErrorHandling<T extends(...args: any[]) => Promise<any>>(
   asyncFn: T,
   errorHandler?: (error: any) => void
 ): T {

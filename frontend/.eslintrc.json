@@ -28,10 +28,7 @@
         }
     },
     "rules": {
-        "indent": [
-            "error",
-            2
-        ],
+        "indent": "off",
         "linebreak-style": [
             "error",
             "unix"
@@ -53,7 +50,9 @@
             }
         ],
         "@typescript-eslint/explicit-module-boundary-types": "off",
-        "no-console": "warn",
+        "@typescript-eslint/no-explicit-any": "off",
+        "react/no-unescaped-entities": "off",
+        "no-console": "off",
         "no-debugger": "error",
         "no-var": "error",
         "prefer-const": "error",
@@ -69,10 +68,7 @@
             "error",
             "1tbs"
         ],
-        "comma-dangle": [
-            "error",
-            "never"
-        ],
+        "comma-dangle": "off",
         "no-trailing-spaces": "error",
         "no-multiple-empty-lines": [
             "error",

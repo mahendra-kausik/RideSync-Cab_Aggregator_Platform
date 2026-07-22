@@ -30,7 +30,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
       driver: '/driver/dashboard',
       admin: '/admin/dashboard',
     };
-    
+
     return <Navigate to={roleDashboards[user.role]} replace />;
   }
 

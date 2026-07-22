@@ -50,7 +50,7 @@ export class ErrorClassifier {
   static classify(error: ApiError | Error | any): EnhancedError {
     // Handle different error types
     let baseError: ApiError;
-    
+
     if (error?.code && error?.message) {
       baseError = error as ApiError;
     } else if (error instanceof Error) {
@@ -336,7 +336,7 @@ export class RetryManager {
         return await operation();
       } catch (error) {
         lastError = error;
-        
+
         // Don't retry on the last attempt
         if (attempt === maxRetries) {
           break;
@@ -366,7 +366,7 @@ export function setupGlobalErrorHandling() {
   window.addEventListener('unhandledrejection', (event) => {
     const error = ErrorClassifier.classify(event.reason);
     ErrorReporter.report(error, { type: 'unhandledRejection' });
-    
+
     // Prevent the default browser error handling
     event.preventDefault();
   });
@@ -374,7 +374,7 @@ export function setupGlobalErrorHandling() {
   // Handle global errors
   window.addEventListener('error', (event) => {
     const error = ErrorClassifier.classify(event.error);
-    ErrorReporter.report(error, { 
+    ErrorReporter.report(error, {
       type: 'globalError',
       filename: event.filename,
       lineno: event.lineno,

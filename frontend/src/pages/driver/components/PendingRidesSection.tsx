@@ -27,8 +27,12 @@ const PendingRidesSection: React.FC<PendingRidesSectionProps> = ({
     const requestTime = new Date(dateString);
     const diffMinutes = Math.floor((now.getTime() - requestTime.getTime()) / (1000 * 60));
 
-    if (diffMinutes < 1) return 'Just now';
-    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+    if (diffMinutes < 1) {
+      return 'Just now';
+    }
+    if (diffMinutes < 60) {
+      return `${diffMinutes}m ago`;
+    }
 
     const diffHours = Math.floor(diffMinutes / 60);
     return `${diffHours}h ago`;

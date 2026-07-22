@@ -278,7 +278,9 @@ const RiderBookPage: React.FC = () => {
   });
 
   const estimateFare = async () => {
-    if (!pickup || !destination) return;
+    if (!pickup || !destination) {
+      return;
+    }
 
     console.log('Estimating fare with:', { pickup, destination });
 
@@ -515,7 +517,9 @@ const RiderBookPage: React.FC = () => {
   };
 
   const cancelRide = async () => {
-    if (!currentRide) return;
+    if (!currentRide) {
+      return;
+    }
 
     try {
       await rideService.cancelRide(currentRide._id, 'Cancelled by rider');
@@ -605,7 +609,6 @@ const RiderBookPage: React.FC = () => {
       }
     );
   };
-
 
 
   if (geolocation.loading) {
