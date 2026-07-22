@@ -339,8 +339,9 @@ userSchema.methods.updateRating = function (newRating) {
     throw new Error('Rating must be between 1 and 5');
   }
 
+  const totalScore = this.profile.rating * this.profile.totalRatings + newRating;
   this.profile.totalRatings += 1;
-  this.profile.rating += newRating;
+  this.profile.rating = totalScore / this.profile.totalRatings;
 
   return this.save();
 };

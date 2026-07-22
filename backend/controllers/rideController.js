@@ -259,7 +259,7 @@ class RideController {
       const userRole = req.user.role;
 
       // Find ride
-      const ride = await Ride.findById(id);
+      let ride = await Ride.findById(id);
       if (!ride) {
         return res.status(404).json({
           success: false,
@@ -301,7 +301,41 @@ class RideController {
 
       // Update ride status
       try {
-        await ride.updateStatus(status, reason);
+        // Atomically transition status, guarded on the status we just validated against,
+        // so a concurrent duplicate request can't run this transition (and its side effects) twice
+        const timelineField = {
+          matched: 'timeline.matchedAt',
+          accepted: 'timeline.acceptedAt',
+          in_progress: 'timeline.startedAt',
+          completed: 'timeline.completedAt',
+          cancelled: 'timeline.cancelledAt'
+        }[status];
+
+        const updateFields = { status };
+        if (timelineField) {
+          updateFields[timelineField] = new Date();
+        }
+        if (reason && status === 'cancelled') {
+          updateFields.cancellationReason = reason;
+        }
+
+        const updatedRide = await Ride.findOneAndUpdate(
+          { _id: id, status: ride.status },
+          { $set: updateFields },
+          { new: true }
+        );
+
+        if (!updatedRide) {
+          return res.status(409).json({
+            success: false,
+            error: {
+              code: 'STATUS_UPDATE_CONFLICT',
+              message: 'Ride status was changed by another request',
+              timestamp: new Date().toISOString()
+            }
+          });
+        }
+        ride = updatedRide;
 
         // Release driver if ride is cancelled or completed
         if ((status === 'cancelled' || status === 'completed') && ride.driverId) {
@@ -931,7 +965,7 @@ class RideController {
       const userRole = req.user.role;
 
       // Find ride
-      const ride = await Ride.findById(id);
+      let ride = await Ride.findById(id);
       if (!ride) {
         return res.status(404).json({
           success: false,
@@ -986,8 +1020,34 @@ class RideController {
         ride.fare.final = ride.fare.estimated;
       }
 
-      // Update status to completed
-      await ride.updateStatus('completed');
+      // Atomically transition to completed, guarded on still being in_progress, so a
+      // concurrent duplicate completion request can't re-run fare calc / driver release / broadcasts
+      const updatedRide = await Ride.findOneAndUpdate(
+        { _id: id, status: 'in_progress' },
+        {
+          $set: {
+            actualDistance: ride.actualDistance,
+            actualDuration: ride.actualDuration,
+            'fare.breakdown': ride.fare.breakdown,
+            'fare.final': ride.fare.final,
+            status: 'completed',
+            'timeline.completedAt': new Date()
+          }
+        },
+        { new: true }
+      );
+
+      if (!updatedRide) {
+        return res.status(409).json({
+          success: false,
+          error: {
+            code: 'STATUS_UPDATE_CONFLICT',
+            message: 'Ride was already completed by another request',
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
+      ride = updatedRide;
 
       // Emit socket events to notify participants and dashboards
       try {

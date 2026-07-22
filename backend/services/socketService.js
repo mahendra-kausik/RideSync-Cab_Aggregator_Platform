@@ -411,9 +411,15 @@ class SocketService {
 
     console.log(`🔌 User disconnected: ${userId} (${userRole}) - Reason: ${reason}`);
 
-    // Clean up connection mappings
-    this.connectedUsers.delete(userId);
+    // Only clean up if this socket is still the user's current one — a stale
+    // disconnect event (e.g. delayed after a fast reconnect) must not wipe a live mapping
+    const isCurrentSocket = this.connectedUsers.get(userId) === socket.id;
     this.userSockets.delete(socket.id);
+
+    if (!isCurrentSocket) {
+      return;
+    }
+    this.connectedUsers.delete(userId);
 
     // If driver disconnects, update availability to false
     if (userRole === 'driver') {

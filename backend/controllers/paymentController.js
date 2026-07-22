@@ -56,8 +56,14 @@ class PaymentController {
         });
       }
 
-      // Check if payment already processed
-      if (ride.payment.status === 'completed') {
+      // Atomically claim payment processing so concurrent/duplicate requests
+      // (e.g. double-click, client retry) can't both process the same ride's payment
+      const claimedRide = await Ride.findOneAndUpdate(
+        { _id: rideId, 'payment.status': { $nin: ['completed', 'processing'] } },
+        { $set: { 'payment.status': 'processing' } }
+      );
+
+      if (!claimedRide) {
         return res.status(400).json({
           success: false,
           error: {

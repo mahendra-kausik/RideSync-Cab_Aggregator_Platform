@@ -470,6 +470,11 @@ describe('Optional Authentication - optionalAuth', () => {
         const token = AuthUtils.generateAccessToken({ userId });
         req.headers.authorization = `Bearer ${token}`;
 
+        sessionManager.validateSession.mockResolvedValue({
+            valid: true,
+            user: { userId },
+            sessionId: 'test-session'
+        });
         User.findById.mockReturnValue({
             select: jest.fn().mockResolvedValue(mockUser)
         });
@@ -482,6 +487,11 @@ describe('Optional Authentication - optionalAuth', () => {
 
     it('should continue even with invalid token', async () => {
         req.headers.authorization = 'Bearer invalid-token';
+
+        sessionManager.validateSession.mockResolvedValue({
+            valid: false,
+            error: 'Invalid token'
+        });
 
         await authMiddleware.optionalAuth(req, res, next);
 
@@ -500,6 +510,11 @@ describe('Optional Authentication - optionalAuth', () => {
         const token = AuthUtils.generateAccessToken({ userId });
         req.headers.authorization = `Bearer ${token}`;
 
+        sessionManager.validateSession.mockResolvedValue({
+            valid: true,
+            user: { userId },
+            sessionId: 'test-session'
+        });
         User.findById.mockReturnValue({
             select: jest.fn().mockResolvedValue(inactiveUser)
         });

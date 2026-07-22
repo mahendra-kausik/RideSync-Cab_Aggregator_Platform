@@ -80,24 +80,8 @@ app.use(cors(corsConfig));
 // Request size limiting
 app.use(requestSizeLimiter);
 
-// Advanced input validation and sanitization
-app.use(advancedInputValidation);
-app.use(sanitizeInput);
-app.use(suspiciousActivityDetector);
-
-// Apply rate limiting to all API routes
-app.use('/api', apiRateLimiter);
-
-// API abuse detection
-app.use('/api', apiAbuseDetection);
-
-// Security audit logging
-app.use(securityAuditLogger);
-
-// Token rotation middleware (after auth middleware)
-app.use(tokenRotationMiddleware);
-
-// Body parsing middleware with size limits
+// Body parsing middleware with size limits — must run before any middleware
+// that inspects req.body (input validation/sanitization below reads it)
 app.use(express.json({
   limit: '1mb',
   verify: (req, res, buf) => {
@@ -114,6 +98,23 @@ app.use(express.urlencoded({
   limit: '1mb',
   parameterLimit: 100 // Limit number of parameters
 }));
+
+// Advanced input validation and sanitization
+app.use(advancedInputValidation);
+app.use(sanitizeInput);
+app.use(suspiciousActivityDetector);
+
+// Apply rate limiting to all API routes
+app.use('/api', apiRateLimiter);
+
+// API abuse detection
+app.use('/api', apiAbuseDetection);
+
+// Security audit logging
+app.use(securityAuditLogger);
+
+// Token rotation middleware (after auth middleware)
+app.use(tokenRotationMiddleware);
 
 // Request logging middleware
 app.use(requestLogger);

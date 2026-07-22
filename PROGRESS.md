@@ -79,6 +79,14 @@ clean end-to-end.
 - `sessionHijackingDetection` middleware import removed from `server.js` (was dead-imported, never wired);
   left un-activated by design — see D-007.
 - Verified: `npm run lint` clean, `npm test` → 7 suites / 163 tests passing, no regressions.
+- **Full logic audit (D-008):** 4-way parallel review of controllers/services/middleware+utils/models+routes+
+  config found and fixed 8 real bugs: driver double-booking race (`MatchingService`), duplicate payment
+  processing race (`paymentController`), duplicate ride-status-transition race (`rideController` x2), stale
+  socket-disconnect wiping a live reconnection (`socketService`), refresh tokens usable as access tokens
+  (`sessionManager`), fail-open `optionalAuth` bypassing the session blacklist, body-parser mounted after the
+  input-sanitization middleware that reads `req.body` (`server.js` — sanitization was silently no-op-ing on
+  every POST/PUT body), and a broken `User.updateRating` that violated its own schema's `max: 5` constraint.
+  All fixed, all 163 tests still pass, lint 0/0.
 
 ## Decisions log (one-line index — full entries in `DECISIONS.md`)
 - D-001 — Hosting = Render + Vercel + Atlas M0 + Upstash Redis (free, no card, native WebSocket).
@@ -90,6 +98,7 @@ clean end-to-end.
 - P-001 — CI/CD build job fixes (typescript pin, eslint config, Mongo test wiring).
 - P-002 — Demo-account login 401 on fresh Atlas deploy (seed data never migrated).
 - D-007 — Backend lint cleanup: zero-warning gate + implemented admin ride search.
+- D-008 — Fixed 8 logic bugs from full backend audit (races, auth fail-open, body-parser order, schema bug).
 
 ## How to resume
 1. Read this file, then `CLAUDE.md`, then the relevant section of `PROJECT_PLAN.md`.

@@ -39,7 +39,7 @@ const otpSchema = new mongoose.Schema({
   expiresAt: {
     type: Date,
     default: Date.now,
-    expires: 300, // TTL: 5 minutes
+    expires: 0, // TTL: MongoDB deletes once the stored expiresAt timestamp is reached
     index: true
   }
 }, {

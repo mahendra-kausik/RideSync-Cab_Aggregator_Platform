@@ -211,12 +211,17 @@ const optionalAuth = async (req, res, next) => {
       return next(); // Continue without authentication
     }
 
-    const decoded = AuthUtils.verifyToken(token);
-    const user = await User.findById(decoded.userId).select('-password');
+    const sessionResult = await sessionManager.validateSession(token);
+    if (!sessionResult.valid) {
+      return next(); // Continue without authentication
+    }
+
+    const user = await User.findById(sessionResult.user.userId).select('-password');
 
     if (user && user.isActive) {
       req.user = user;
-      req.tokenData = decoded;
+      req.tokenData = sessionResult.user;
+      req.sessionId = sessionResult.sessionId;
     }
 
     next();

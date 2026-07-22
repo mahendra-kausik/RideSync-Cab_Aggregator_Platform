@@ -186,7 +186,8 @@ class MatchingService {
                 {
                     _id: driverId,
                     role: 'driver',
-                    isActive: true
+                    isActive: true,
+                    'driverInfo.isAvailable': true // Ensure driver hasn't already been claimed by a concurrent assignment
                 },
                 {
                     'driverInfo.isAvailable': false,

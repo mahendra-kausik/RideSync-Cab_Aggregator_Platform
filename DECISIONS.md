@@ -239,3 +239,52 @@
 - **Alternatives considered:** Leaving `--max-warnings=40` (rejected — masks future regressions); wiring up
   `sessionHijackingDetection` now (rejected by user — separate, riskier change).
 - **Tradeoffs / risks:** None expected — all 7 backend test suites (163 tests) still pass; lint is 0/0.
+
+## D-008 — Fixed 8 concurrency/auth/data-integrity bugs found by full backend logic audit
+- **Date / Layer:** 2026-07-22 / Pre-Layer-2 cleanup (follow-up to D-007)
+- **Context:** After the lint cleanup (D-007), user asked whether the backend had any remaining logic
+  errors. Ran a 4-way parallel logic audit (controllers / services / middleware+utils / models+routes+config)
+  looking specifically for race conditions, inverted auth checks, and data-integrity bugs — not style. All
+  findings were independently re-verified by reading the actual code before fixing.
+- **Decision:** Fixed all 8 confirmed bugs:
+  1. `MatchingService.assignRideToDriver` — driver-side `findOneAndUpdate` now also filters on
+     `driverInfo.isAvailable: true`, closing a double-booking race (two concurrent matches could both
+     claim the same driver).
+  2. `paymentController.processPayment` — replaced the read-then-write "already paid" check with an atomic
+     `findOneAndUpdate` claim (`payment.status $nin [completed, processing]`), preventing double payment
+     processing from duplicate/concurrent requests.
+  3. `rideController.updateRideStatus` — replaced the model's load-then-save `ride.updateStatus()` call with
+     an atomic `findOneAndUpdate` guarded on the ride's current status, returning 409 on conflict instead of
+     silently letting a duplicate request re-run side effects (driver release, socket broadcasts).
+  4. `rideController.completeRide` — same atomic-transition fix, guarded on `status: 'in_progress'`.
+  5. `socketService.handleDisconnection` — now only clears `connectedUsers`/marks a driver unavailable if the
+     disconnecting socket is still the user's *current* socket, fixing a race where a delayed disconnect
+     event from a stale connection could wipe a live reconnection's mapping and silently drop real-time events.
+  6. `sessionManager` — access/refresh tokens now carry a `type` claim, and `validateSession` (used on every
+     authenticated request) rejects non-access tokens. Previously a leaked 7-day refresh token worked as a
+     full API access token.
+  7. `middleware/auth.js: optionalAuth` — now routes through `sessionManager.validateSession` (blacklist +
+     active-session check) instead of raw JWT verification, closing a fail-open gap where a blacklisted
+     (logged-out/rotated) token would still authenticate. Not currently wired to any route, but was a live
+     landmine for the next one that adopts it.
+  8. `server.js` — moved `express.json()`/`express.urlencoded()` above `advancedInputValidation`,
+     `sanitizeInput`, and `suspiciousActivityDetector`. Those three middlewares read `req.body`, which Express
+     doesn't populate until the body parser runs — they were previously silently no-op-ing on every POST/PUT
+     body (only query/params were ever actually inspected).
+  9. `models/User.js: updateRating` — was accumulating a running sum into a field capped at `max: 5` by its
+     own schema (would throw a ValidationError on the 2nd call; had zero callers). Rewrote to store a correct
+     running average, matching the pattern `paymentController.updateUserRating` already uses in production.
+  10. `models/OTP.js` — `expires: 300` combined with an already-future `expiresAt` (`now + 5min`) doubled the
+      physical TTL cleanup delay to 10 minutes. Changed to `expires: 0` so Mongo purges exactly at the stored
+      timestamp, matching the "5 minutes" comment/intent. (App-level expiry check was already correct — this
+      only affected how long expired documents lingered in the collection.)
+- **Why:** These are the kind of bugs that don't show up in single-request manual testing or in a lint pass —
+  they require reasoning about concurrent requests and adversarial/duplicate input, which is exactly the class
+  of bug worth catching before Layer 2 adds Redis-backed shared state on top.
+- **Alternatives considered:** Wiring up `sessionHijackingDetection`/`bruteForceProtection` while touching
+  auth code (rejected — they reference `req.session`, which this JWT-only app never populates; activating them
+  is a bigger, separately-reviewable change, not a fix to an existing bug).
+- **Tradeoffs / risks:** One test (`middleware-auth.test.js`, `optionalAuth` suite) needed updating to
+  explicitly mock `sessionManager.validateSession` per-case — it was previously passing only because of
+  unintentional mock-state leakage between tests (`jest.clearAllMocks()` doesn't reset `mockResolvedValue`
+  implementations). Fixed the test to mock explicitly rather than rely on leakage. All 163 tests pass; lint 0/0.

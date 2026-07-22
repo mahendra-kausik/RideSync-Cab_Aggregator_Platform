@@ -84,6 +84,12 @@ class SessionManager {
 
       // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+      // Refresh tokens must never be usable as API access tokens
+      if (decoded.type !== 'access') {
+        throw new Error('Token is not a valid access token');
+      }
+
       const session = this.activeSessions.get(decoded.sessionId);
 
       if (!session || !session.isActive) {
@@ -246,7 +252,7 @@ class SessionManager {
    * @returns {string} - JWT access token
    */
   generateAccessToken(payload) {
-    return jwt.sign(payload, process.env.JWT_SECRET, {
+    return jwt.sign({ ...payload, type: 'access' }, process.env.JWT_SECRET, {
       expiresIn: '24h',
       issuer: 'cab-aggregator',
       audience: 'cab-aggregator-users'
@@ -259,7 +265,7 @@ class SessionManager {
    * @returns {string} - JWT refresh token
    */
   generateRefreshToken(payload) {
-    return jwt.sign(payload, process.env.JWT_SECRET, {
+    return jwt.sign({ ...payload, type: 'refresh' }, process.env.JWT_SECRET, {
       expiresIn: '7d',
       issuer: 'cab-aggregator',
       audience: 'cab-aggregator-users'
