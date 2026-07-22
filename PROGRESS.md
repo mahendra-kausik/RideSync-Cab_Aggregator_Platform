@@ -95,6 +95,14 @@ clean end-to-end.
   `isLoading` on its success path, so an abandoned registration (phone step done, OTP step skipped) left
   `ProtectedRoute` stuck showing a spinner forever. All fixed; `tsc --noEmit` clean, lint clean, 59 frontend
   tests pass.
+- **Local dev seeding fixed (P-003):** `docker-compose up` now always has exactly one demo admin/rider/driver
+  without any manual step. `backend/scripts/seed.js` rewritten to be idempotent (`ensureDemoAccounts()`,
+  create-if-missing via `User.findByPhone`/`findByEmail`, never deletes) and auto-runs from `server.js` on
+  every backend boot, gated to never run when `NODE_ENV === 'production'`. Also fixed local `.env`'s
+  `NODE_ENV` (was `production`, leaking from a Render-reference comment block into Docker Compose's
+  auto-loaded `.env`) back to `development`. Verified live end-to-end: fresh build seeds all 3 accounts,
+  restart is a no-op, all 3 (`admin@cabaggreg.local`/`admin123`, `+1234567890`/`rider123`,
+  `+1234567892`/`driver123`) log in successfully via the running API.
 
 ## Decisions log (one-line index — full entries in `DECISIONS.md`)
 - D-001 — Hosting = Render + Vercel + Atlas M0 + Upstash Redis (free, no card, native WebSocket).
@@ -108,6 +116,7 @@ clean end-to-end.
 - D-007 — Backend lint cleanup: zero-warning gate + implemented admin ride search.
 - D-008 — Fixed 8 logic bugs from full backend audit (races, auth fail-open, body-parser order, schema bug).
 - D-009 — Fixed 3 frontend logic bugs (map center lat/lng swap, unhandled token rotation, stuck register spinner).
+- P-003 — Idempotent local demo-account seeding + fixed local .env NODE_ENV leaking from Render reference block.
 
 ## How to resume
 1. Read this file, then `CLAUDE.md`, then the relevant section of `PROJECT_PLAN.md`.

@@ -331,3 +331,28 @@
   implements and requires no new backend work).
 - **Tradeoffs / risks:** None found; `tsc --noEmit` clean, `eslint` clean (11 pre-existing warnings unrelated
   to touched files, under the 15 cap), all 59 frontend tests pass.
+
+## P-003 — Local dev seeding required manual reseeding on every launch
+- **Date / Layer:** 2026-07-22 / Pre-Layer-2 cleanup
+- **Context:** User wanted `docker-compose up` to always have exactly one demo admin/rider/driver available
+  without manually running `npm run seed` every time. Two separate causes made this not work:
+  1. The old `seed.js` was destructive (`User.deleteMany({})` + `Ride.deleteMany({})` on every run) and had
+     to be invoked manually — nothing called it automatically.
+  2. The root `.env` (git-ignored, local-only) had `NODE_ENV=production` set under a "Render reference"
+     comment block that was meant purely as deployment documentation. Docker Compose auto-loads `.env` from
+     the project root for `${VAR}` substitution, so this leaked into local dev: the backend container ran in
+     production mode, which disables dev-only conveniences.
+- **Action:** Rewrote `backend/scripts/seed.js` to be idempotent — `ensureDemoAccounts()` looks up each demo
+  account via the model's existing `User.findByPhone`/`findByEmail` statics (hash-based lookup, correct given
+  encrypted PII fields) and only creates it if missing; never deletes anything. Trimmed the seed list from 5
+  users (2 riders, 2 drivers, 1 admin) to exactly 1 of each role, matching what was asked for. Wired
+  `ensureDemoAccounts()` into `server.js`'s `startServer()` right after `dbConnection.connect()`, gated on
+  `NODE_ENV !== 'production'` so it can never run against the real Atlas/production database. Fixed local
+  `.env`'s `NODE_ENV` to `development` with a comment explaining why (Render's own `NODE_ENV=production` is
+  configured in Render's dashboard directly, independent of this file).
+- **Why:** This makes `docker-compose up` self-sufficient for local dev — first boot creates the 3 demo
+  accounts, every later boot (including plain container restarts) is a no-op since the accounts already
+  exist, and the guard makes it structurally impossible for this to touch the production database.
+- **Tradeoffs / risks:** None found. Verified live: fresh `docker-compose up -d --build` seeded all 3 accounts
+  on first boot, a subsequent restart logged no re-seed/duplicate-key activity, and all three demo accounts
+  (`admin@cabaggreg.local` / `+1234567890` / `+1234567892`) successfully logged in via the running API.

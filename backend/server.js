@@ -267,6 +267,13 @@ async function startServer() {
     // Connect to database
     await dbConnection.connect();
 
+    // Ensure demo accounts (admin/rider/driver) exist for local development —
+    // idempotent, never runs in production so it never touches the real Atlas DB
+    if (process.env.NODE_ENV !== 'production') {
+      const { ensureDemoAccounts } = require('./scripts/seed');
+      await ensureDemoAccounts();
+    }
+
     // Start HTTP server with Socket.IO
     server.listen(PORT, () => {
       console.log(`🚀 Backend server running on port ${PORT}`);

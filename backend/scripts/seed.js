@@ -1,15 +1,14 @@
 /**
- * Database seed script for test users (riders, drivers, admin)
- * Run with: npm run seed
+ * Idempotent demo-account seeding: exactly one admin, one rider, one driver.
+ * Safe to run on every server startup (see server.js) or manually via `npm run seed`.
+ * Never touches existing data — only creates an account if its phone/email isn't already present.
  */
 
 require('dotenv').config();
 const dbConnection = require('../config/database');
-const { User, Ride } = require('../models');
+const { User } = require('../models');
 
-// Test user data
-const seedUsers = [
-  // Admin user
+const demoUsers = [
   {
     email: 'admin@cabaggreg.local',
     password: 'admin123',
@@ -19,8 +18,6 @@ const seedUsers = [
     },
     isVerified: true
   },
-
-  // Test riders
   {
     phone: '+1234567890',
     password: 'rider123',
@@ -33,20 +30,6 @@ const seedUsers = [
     },
     isVerified: true
   },
-  {
-    phone: '+1234567891',
-    password: 'rider123',
-    role: 'rider',
-    profile: {
-      name: 'Jane Smith',
-      rating: 4.8,
-      totalRides: 15,
-      totalRatings: 15
-    },
-    isVerified: true
-  },
-
-  // Test drivers
   {
     phone: '+1234567892',
     password: 'driver123',
@@ -69,84 +52,39 @@ const seedUsers = [
       isAvailable: true,
       currentLocation: {
         type: 'Point',
-        coordinates: [77.5946, 12.9716] // Bengaluru, India coordinates
-      }
-    },
-    isVerified: true
-  },
-  {
-    phone: '+1234567893',
-    password: 'driver123',
-    role: 'driver',
-    profile: {
-      name: 'Sarah Wilson',
-      rating: 4.9,
-      totalRides: 200,
-      totalRatings: 200
-    },
-    driverInfo: {
-      licenseNumber: 'DL987654321',
-      vehicleDetails: {
-        make: 'Honda',
-        model: 'Civic',
-        plateNumber: 'XYZ789',
-        color: 'Blue',
-        year: 2021
-      },
-      isAvailable: true,
-      currentLocation: {
-        type: 'Point',
-        coordinates: [77.6099, 12.9698] // Bengaluru, India coordinates (slightly different location)
+        coordinates: [77.5946, 12.9716] // Bengaluru, India
       }
     },
     isVerified: true
   }
 ];
 
-async function seedDatabase() {
-  try {
-    console.log('🌱 Starting database seeding...');
+async function ensureDemoAccounts() {
+  for (const userData of demoUsers) {
+    const existing = userData.email
+      ? await User.findByEmail(userData.email)
+      : await User.findByPhone(userData.phone);
 
-    // Connect to database
-    await dbConnection.connect();
-
-    // Clear existing data
-    console.log('🧹 Clearing existing data...');
-    await User.deleteMany({});
-    await Ride.deleteMany({});
-
-    // Create users
-    console.log('👥 Creating test users...');
-    const createdUsers = [];
-
-    for (const userData of seedUsers) {
-      try {
-        // Store plaintext values before encryption
-        const displayName = userData.profile.name;
-        const displayIdentifier = userData.phone || userData.email;
-
-        const user = new User(userData);
-        await user.save();
-        createdUsers.push(user);
-
-        // Log using plaintext values we stored before encryption
-        console.log(`✅ Created ${user.role}: ${displayName} (${displayIdentifier})`);
-      } catch (error) {
-        console.error(`❌ Failed to create user ${userData.profile.name}:`, error.message);
-      }
+    if (existing) {
+      continue;
     }
 
-    console.log('\n🎉 Database seeding completed!');
-    console.log(`📊 Created ${createdUsers.length} users:`);
-    console.log(`   - ${createdUsers.filter(u => u.role === 'admin').length} admin(s)`);
-    console.log(`   - ${createdUsers.filter(u => u.role === 'rider').length} rider(s)`);
-    console.log(`   - ${createdUsers.filter(u => u.role === 'driver').length} driver(s)`);
+    const user = new User(userData);
+    await user.save();
+    console.log(`✅ Seeded demo ${user.role}: ${userData.profile.name} (${userData.email || userData.phone})`);
+  }
+}
 
-    console.log('\n🔐 Test Credentials:');
+async function seedDatabase() {
+  try {
+    console.log('🌱 Ensuring demo accounts exist...');
+    await dbConnection.connect();
+    await ensureDemoAccounts();
+
+    console.log('\n🔐 Demo Credentials:');
     console.log('Admin: admin@cabaggreg.local / admin123');
     console.log('Rider: +1234567890 / rider123');
     console.log('Driver: +1234567892 / driver123');
-
   } catch (error) {
     console.error('❌ Seeding failed:', error.message);
     process.exit(1);
@@ -161,4 +99,4 @@ if (require.main === module) {
   seedDatabase();
 }
 
-module.exports = { seedDatabase, seedUsers };
+module.exports = { ensureDemoAccounts, demoUsers };
