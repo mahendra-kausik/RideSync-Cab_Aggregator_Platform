@@ -76,3 +76,21 @@
   doesn't solve fan-out to a room spanning instances); a custom pub/sub layer (reinventing the adapter).
 - **Tradeoffs / risks:** Extra Redis pub/sub traffic; on free tiers this is negligible for portfolio-scale load.
   If Redis is down, sockets fall back to single-instance behavior (acceptable degradation).
+
+## D-004 — Explicit `ensure-indexes.js` script + `autoIndex: false` in production
+- **Date / Layer:** 2026-07-22 / Layer 1
+- **Context:** All indexes (2dsphere geospatial, compound query indexes, unique/sparse hashes) are already
+  declared in the Mongoose schemas (`User.js`, `Ride.js`, `OTP.js`) via `schema.index(...)`. Mongoose's default
+  `autoIndex: true` would silently build these on every connect — including in prod against a shared Atlas M0
+  cluster, where a blocking index build on first deploy is exactly the kind of surprise you don't want on a
+  free-tier cluster with no ops visibility.
+- **Decision:** Set `autoIndex: process.env.NODE_ENV !== 'production'` in `backend/config/database.js`, and
+  added `backend/scripts/ensure-indexes.js` — a one-shot script that connects and calls `Model.syncIndexes()`
+  for each model. Run manually after each prod deploy (or from a CI step) instead of implicitly on app boot.
+- **Why:** Matches Mongoose's own recommended production pattern (disable autoIndex, sync explicitly) and keeps
+  index changes visible/auditable instead of happening implicitly inside `mongoose.connect()`.
+- **Alternatives considered:** Leaving `autoIndex: true` everywhere (simplest, but risks an implicit blocking
+  build on the live cluster on first prod boot); porting the old `scripts/mongo-init.js` (docker-only, already
+  stale — its field names predate the PII-hash fields `phone_hash`/`email_hash` now on `User.js`).
+- **Tradeoffs / risks:** Adds a manual step to the deploy checklist (documented in `PROGRESS.md`); if skipped,
+  prod queries just run without new indexes until the script is run — the app still works, just slower.

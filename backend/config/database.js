@@ -29,6 +29,9 @@ class DatabaseConnection {
       minPoolSize: 5, // Maintain a minimum of 5 socket connections
       maxIdleTimeMS: 30000, // Close connections after 30 seconds of inactivity
       bufferCommands: false, // Disable mongoose buffering
+      // Prod: index builds run explicitly via scripts/ensure-indexes.js, not on every
+      // connect — an implicit build against a live M0 cluster can block writes.
+      autoIndex: process.env.NODE_ENV !== 'production',
     };
 
     try {
