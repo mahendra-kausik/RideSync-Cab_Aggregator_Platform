@@ -665,7 +665,7 @@ const forgotPassword = async (req, res) => {
     // Simulate email sending by logging to console (as per requirements)
     console.log(`📧 Email Simulation - Password Reset for ${email}`);
     console.log(`🔗 Reset Link: http://localhost:3000/reset-password?token=${resetToken}`);
-    console.log(`⏰ Reset token expires in 1 hour`);
+    console.log('⏰ Reset token expires in 1 hour');
 
     res.status(200).json({
       success: true,

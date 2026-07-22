@@ -203,7 +203,7 @@ const DriverMyRides: React.FC = () => {
                     <h3>No rides found</h3>
                     <p>
                         {filterStatus === 'all'
-                            ? 'You haven\'t completed any rides yet.'
+                            ? "You haven't completed any rides yet."
                             : `You don't have any ${filterStatus} rides.`}
                     </p>
                     <button className="btn-primary" onClick={() => navigate('/driver/dashboard')}>

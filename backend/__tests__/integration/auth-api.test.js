@@ -6,7 +6,9 @@ const { User, OTP } = require('../../models');
 describe('Authentication API (Integration)', () => {
     let app;
 
-    beforeAll(() => { app = createTestApp(); });
+    beforeAll(() => {
+      app = createTestApp();
+    });
 
     describe('POST /api/auth/register-phone', () => {
         it('registers new rider and creates OTP record', async () => {

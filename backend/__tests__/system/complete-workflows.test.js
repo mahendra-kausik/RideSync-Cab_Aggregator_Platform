@@ -9,7 +9,9 @@ const { OTP, User } = require('../../models');
  */
 describe('System Workflow - Rider Journey', () => {
     let app;
-    beforeAll(() => { app = createTestApp(); });
+    beforeAll(() => {
+      app = createTestApp();
+    });
 
     it('should complete full rider workflow successfully', async () => {
         const phone = '+15551112222';

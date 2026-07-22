@@ -83,10 +83,10 @@ class Logger {
     };
 
     const logEntry = this.formatLogEntry(LOG_LEVELS.ERROR, message, logData);
-    
+
     // Always log errors to console
     console.error(`🚨 ${message}`, error || '');
-    
+
     // Write to error log file
     this.writeToFile(logEntry, 'error');
   }
@@ -96,11 +96,11 @@ class Logger {
    */
   warn(message, metadata = {}) {
     const logEntry = this.formatLogEntry(LOG_LEVELS.WARN, message, metadata);
-    
+
     if (process.env.NODE_ENV === 'development') {
       console.warn(`⚠️  ${message}`, metadata);
     }
-    
+
     this.writeToFile(logEntry, 'warning');
   }
 
@@ -109,11 +109,11 @@ class Logger {
    */
   info(message, metadata = {}) {
     const logEntry = this.formatLogEntry(LOG_LEVELS.INFO, message, metadata);
-    
+
     if (process.env.NODE_ENV === 'development') {
       console.log(`ℹ️  ${message}`, metadata);
     }
-    
+
     this.writeToFile(logEntry, 'info');
   }
 
@@ -145,7 +145,7 @@ class Logger {
     };
 
     const message = `${req.method} ${req.url} - ${res.statusCode} (${responseTime}ms)`;
-    
+
     if (res.statusCode >= 400) {
       this.error(message, null, requestData);
     } else if (res.statusCode >= 300) {
@@ -166,7 +166,7 @@ class Logger {
     };
 
     const message = `Security Event: ${event}`;
-    
+
     if (securityData.severity === 'HIGH') {
       this.error(message, null, securityData);
     } else {
@@ -203,7 +203,7 @@ class Logger {
     };
 
     const message = `Performance: ${operation} completed in ${duration}ms`;
-    
+
     if (duration > 5000) { // Slow operation (>5s)
       this.warn(message, performanceData);
     } else {
@@ -227,7 +227,7 @@ class Logger {
     };
 
     const message = `DB: ${operation} on ${collection} (${duration}ms)`;
-    
+
     if (duration > 1000) { // Slow query (>1s)
       this.warn(message, dbData);
     } else {
@@ -247,7 +247,7 @@ class Logger {
       files.forEach(file => {
         const filePath = path.join(this.logsDir, file);
         const stats = fs.statSync(filePath);
-        
+
         if (stats.mtime < thirtyDaysAgo) {
           fs.unlinkSync(filePath);
           console.log(`🗑️  Cleaned old log file: ${file}`);
@@ -274,13 +274,13 @@ class Logger {
         const filePath = path.join(this.logsDir, file);
         const fileStats = fs.statSync(filePath);
         const type = file.split('-')[0];
-        
+
         stats.totalSize += fileStats.size;
         stats.filesByType[type] = (stats.filesByType[type] || 0) + 1;
       });
 
       stats.totalSizeMB = (stats.totalSize / (1024 * 1024)).toFixed(2);
-      
+
       return stats;
     } catch (error) {
       console.error('Failed to get log stats:', error.message);

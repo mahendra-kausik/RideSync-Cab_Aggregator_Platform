@@ -36,7 +36,7 @@ const authenticateToken = async (req, res, next) => {
 
     // Validate session and token
     const sessionResult = await sessionManager.validateSession(token);
-    
+
     if (!sessionResult.valid) {
       await securityLogger.logAuthEvent('TOKEN_INVALID', {
         error: sessionResult.error,
@@ -72,10 +72,10 @@ const authenticateToken = async (req, res, next) => {
 
       return res.status(401).json(response);
     }
-    
+
     // Fetch user from database to ensure account is still active
     const user = await User.findById(sessionResult.user.userId).select('-password');
-    
+
     if (!user) {
       await securityLogger.logAuthEvent('USER_NOT_FOUND', {
         userId: sessionResult.user.userId,
@@ -114,13 +114,13 @@ const authenticateToken = async (req, res, next) => {
     req.user = user;
     req.tokenData = sessionResult.user;
     req.sessionId = sessionResult.sessionId;
-    
+
     // Add new tokens to response headers if rotation occurred
     if (sessionResult.newTokens) {
       res.set('X-New-Access-Token', sessionResult.newTokens.accessToken);
       res.set('X-New-Refresh-Token', sessionResult.newTokens.refreshToken);
     }
-    
+
     next();
   } catch (error) {
     await securityLogger.logAuthEvent('TOKEN_VERIFICATION_ERROR', {
@@ -213,12 +213,12 @@ const optionalAuth = async (req, res, next) => {
 
     const decoded = AuthUtils.verifyToken(token);
     const user = await User.findById(decoded.userId).select('-password');
-    
+
     if (user && user.isActive) {
       req.user = user;
       req.tokenData = decoded;
     }
-    
+
     next();
   } catch (error) {
     // Ignore authentication errors for optional auth

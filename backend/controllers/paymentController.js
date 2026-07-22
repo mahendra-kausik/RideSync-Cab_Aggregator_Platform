@@ -301,7 +301,7 @@ class PaymentController {
       const { page = 1, limit = 10, status } = req.query;
 
       // Build query based on user role
-      let query = {
+      const query = {
         'payment.status': { $in: ['completed', 'failed'] }
       };
 

@@ -3,15 +3,15 @@ const mongoose = require('mongoose');
 
 /**
  * Driver Matching Service
- * 
+ *
  * Implements geospatial queries to find nearest available drivers with configurable
  * radius expansion logic and atomic assignment operations to prevent conflicts.
- * 
+ *
  * Performance Characteristics:
  * - Time Complexity: O(log n) for geospatial queries with 2dsphere index
  * - Space Complexity: O(k) where k is the number of drivers within radius
  * - Atomic Operations: Uses MongoDB findOneAndUpdate for conflict-free assignments
- * 
+ *
  * Optimization Notes:
  * - Geospatial index on driverInfo.currentLocation enables efficient proximity queries
  * - Radius expansion prevents empty results in low-density areas
@@ -26,7 +26,7 @@ class MatchingService {
 
     /**
      * Find the nearest available driver for a ride request
-     * 
+     *
      * @param {number} pickupLongitude - Pickup location longitude
      * @param {number} pickupLatitude - Pickup location latitude
      * @param {string} rideId - Ride ID for assignment
@@ -58,7 +58,9 @@ class MatchingService {
 
             // Try each radius expansion step
             for (const radius of this.RADIUS_EXPANSION_STEPS) {
-                if (radius < initialRadius) continue;
+                if (radius < initialRadius) {
+                  continue;
+                }
 
                 console.log(`🔍 Searching for drivers within ${radius / 1000}km radius...`);
 
@@ -142,10 +144,10 @@ class MatchingService {
 
     /**
      * Atomically assign a ride to a driver with conflict resolution
-     * 
+     *
      * Uses MongoDB's findOneAndUpdate with specific conditions to ensure
      * only available drivers can be assigned and prevents double-booking.
-     * 
+     *
      * @param {string} rideId - Ride ID to assign
      * @param {string} driverId - Driver ID to assign to
      * @returns {Promise<Object>} Assignment result with success status
@@ -231,7 +233,7 @@ class MatchingService {
 
     /**
      * Release driver from assignment (when ride is cancelled or completed)
-     * 
+     *
      * @param {string} driverId - Driver ID to release
      * @returns {Promise<Object>} Release result
      */
@@ -275,7 +277,7 @@ class MatchingService {
 
     /**
      * Get available drivers count within radius
-     * 
+     *
      * @param {number} longitude - Center longitude
      * @param {number} latitude - Center latitude
      * @param {number} radius - Search radius in meters
@@ -309,7 +311,7 @@ class MatchingService {
 
     /**
      * Find available drivers within specified radius
-     * 
+     *
      * @private
      * @param {number} longitude - Center longitude
      * @param {number} latitude - Center latitude
@@ -338,7 +340,7 @@ class MatchingService {
 
     /**
      * Validate coordinates are within valid ranges
-     * 
+     *
      * @private
      * @param {number} longitude - Longitude to validate
      * @param {number} latitude - Latitude to validate
@@ -355,7 +357,7 @@ class MatchingService {
 
     /**
      * Calculate distance between two coordinates using Haversine formula
-     * 
+     *
      * @private
      * @param {number} lng1 - First point longitude
      * @param {number} lat1 - First point latitude
@@ -378,7 +380,7 @@ class MatchingService {
 
     /**
      * Estimate arrival time based on distance and average speed
-     * 
+     *
      * @private
      * @param {number} lng1 - Pickup longitude
      * @param {number} lat1 - Pickup latitude

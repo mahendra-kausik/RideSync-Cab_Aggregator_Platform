@@ -1,14 +1,14 @@
 /**
  * Fare Calculation Service
- * 
+ *
  * Implements dynamic fare calculation with configurable pricing components:
  * Formula: base_fare + (per_km * distance) + (per_min * duration) * surge_multiplier
- * 
+ *
  * Performance Characteristics:
  * - Time Complexity: O(1) for fare calculations
  * - Space Complexity: O(1) for fare breakdown objects
  * - Precision: All monetary values rounded to 2 decimal places
- * 
+ *
  * Optimization Notes:
  * - Surge pricing applied multiplicatively to total base fare
  * - Configurable pricing tiers for different service levels
@@ -42,7 +42,7 @@ class FareService {
 
   /**
    * Calculate fare for a ride based on distance, duration, and surge conditions
-   * 
+   *
    * @param {number} distance - Distance in kilometers
    * @param {number} duration - Duration in minutes
    * @param {number} surgeMultiplier - Surge pricing multiplier (default: 1.0)
@@ -125,7 +125,7 @@ class FareService {
 
   /**
    * Calculate surge multiplier based on current demand conditions
-   * 
+   *
    * @param {Object} demandData - Current demand metrics
    * @param {number} demandData.activeRides - Number of active rides
    * @param {number} demandData.availableDrivers - Number of available drivers
@@ -167,7 +167,7 @@ class FareService {
 
   /**
    * Estimate fare for a potential ride (used for fare estimation endpoint)
-   * 
+   *
    * @param {number} distance - Distance in kilometers
    * @param {number} duration - Duration in minutes
    * @param {Object} options - Additional options
@@ -217,7 +217,7 @@ class FareService {
 
   /**
    * Calculate final fare after ride completion with actual metrics
-   * 
+   *
    * @param {Object} rideData - Completed ride data
    * @param {number} rideData.actualDistance - Actual distance traveled
    * @param {number} rideData.actualDuration - Actual ride duration
@@ -271,7 +271,7 @@ class FareService {
 
   /**
    * Get pricing configuration for display purposes
-   * 
+   *
    * @returns {Object} Current pricing configuration
    */
   static getPricingConfig() {
@@ -286,7 +286,7 @@ class FareService {
 
   /**
    * Validate fare calculation inputs
-   * 
+   *
    * @private
    * @param {number} distance - Distance to validate
    * @param {number} duration - Duration to validate
@@ -306,14 +306,14 @@ class FareService {
       throw new Error('Surge multiplier must be between 1.0 and 5.0');
     }
 
-    if (!this.PRICING_CONFIG.serviceLevels.hasOwnProperty(serviceLevel)) {
+    if (!Object.prototype.hasOwnProperty.call(this.PRICING_CONFIG.serviceLevels, serviceLevel)) {
       throw new Error(`Invalid service level: ${serviceLevel}`);
     }
   }
 
   /**
    * Round number to two decimal places
-   * 
+   *
    * @private
    * @param {number} value - Value to round
    * @returns {number} Rounded value
@@ -324,7 +324,7 @@ class FareService {
 
   /**
    * Get human-readable surge reason
-   * 
+   *
    * @private
    * @param {Object} demandData - Demand data
    * @returns {string} Surge reason
@@ -333,16 +333,24 @@ class FareService {
     const { activeRides = 0, availableDrivers = 1, isPeakHour = false } = demandData;
     const ratio = (activeRides) / Math.max(availableDrivers, 1);
 
-    if (ratio > 3.0) return 'Very high demand';
-    if (ratio > 2.0) return 'High demand';
-    if (ratio > 1.5) return 'Increased demand';
-    if (isPeakHour) return 'Peak hours';
+    if (ratio > 3.0) {
+      return 'Very high demand';
+    }
+    if (ratio > 2.0) {
+      return 'High demand';
+    }
+    if (ratio > 1.5) {
+      return 'Increased demand';
+    }
+    if (isPeakHour) {
+      return 'Peak hours';
+    }
     return 'Normal pricing';
   }
 
   /**
    * Estimate pickup time based on demand
-   * 
+   *
    * @private
    * @param {Object} demandData - Demand data
    * @returns {number} Estimated pickup time in minutes

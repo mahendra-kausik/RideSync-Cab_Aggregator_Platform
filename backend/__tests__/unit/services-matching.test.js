@@ -1,12 +1,12 @@
 /**
  * UNIT TESTS for MatchingService Helper Functions
- * 
+ *
  * Tests MatchingService utility functions in isolation without database
  * - Coordinate validation
  * - Distance calculation (Haversine formula)
  * - Arrival time estimation
  * - Configuration constants
- * 
+ *
  * Characteristics:
  * - Fast execution (<1 second per test)
  * - No database dependencies

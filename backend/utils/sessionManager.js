@@ -104,7 +104,7 @@ class SessionManager {
       const tokenAge = now - new Date(decoded.iat * 1000);
       const needsRotation = tokenAge > this.rotationThreshold;
 
-      let result = {
+      const result = {
         valid: true,
         user: decoded,
         sessionId: decoded.sessionId,
@@ -220,11 +220,11 @@ class SessionManager {
    */
   async cleanupUserSessions(userId) {
     const userSessions = this.getUserSessions(userId);
-    
+
     if (userSessions.length > this.maxSessionsPerUser) {
       // Sort by last activity and keep only the most recent
       userSessions.sort((a, b) => b.lastActivity - a.lastActivity);
-      
+
       const sessionsToRemove = userSessions.slice(this.maxSessionsPerUser);
       sessionsToRemove.forEach(session => {
         this.invalidateSession(session.sessionId);
@@ -289,7 +289,7 @@ class SessionManager {
    */
   cleanup() {
     const now = new Date();
-    
+
     // Remove expired sessions
     for (const [sessionId, session] of this.activeSessions.entries()) {
       if (now - session.lastActivity > this.sessionTimeout) {

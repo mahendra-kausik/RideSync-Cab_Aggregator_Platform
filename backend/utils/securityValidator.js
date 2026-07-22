@@ -26,7 +26,7 @@ class SecurityValidator {
     this.validateRateLimitingSettings();
     this.validateSecurityHeaders();
     this.validateCORSConfiguration();
-    
+
     return this.validationResults;
   }
 
@@ -78,7 +78,7 @@ class SecurityValidator {
    */
   validateEncryptionSettings() {
     const encryptionKey = process.env.ENCRYPTION_KEY;
-    
+
     if (!encryptionKey) {
       this.validationResults.warnings.push(
         'ENCRYPTION_KEY not set - PII fields will not be encrypted'
@@ -114,7 +114,7 @@ class SecurityValidator {
    */
   validateJWTConfiguration() {
     const jwtSecret = process.env.JWT_SECRET;
-    
+
     if (!jwtSecret) {
       this.validationResults.errors.push('JWT_SECRET is required');
       return;
@@ -155,7 +155,7 @@ class SecurityValidator {
    */
   validateRateLimitingSettings() {
     const rateLimits = securityConfig.rateLimiting;
-    
+
     // Check auth rate limiting
     if (rateLimits.auth.max > 10) {
       this.validationResults.warnings.push(
@@ -184,7 +184,7 @@ class SecurityValidator {
    */
   validateSecurityHeaders() {
     const headers = securityConfig.headers;
-    
+
     if (!headers.contentSecurityPolicy) {
       this.validationResults.warnings.push(
         'Content Security Policy is not configured'
@@ -211,7 +211,7 @@ class SecurityValidator {
    */
   validateCORSConfiguration() {
     const cors = securityConfig.cors;
-    
+
     if (cors.allowedOrigins.includes('*')) {
       this.validationResults.errors.push(
         'CORS is configured to allow all origins (*). This is insecure for production.'
@@ -240,14 +240,14 @@ class SecurityValidator {
    */
   calculateEntropy(str) {
     const freq = {};
-    for (let char of str) {
+    for (const char of str) {
       freq[char] = (freq[char] || 0) + 1;
     }
 
     let entropy = 0;
     const len = str.length;
-    
-    for (let char in freq) {
+
+    for (const char in freq) {
       const p = freq[char] / len;
       entropy -= p * Math.log2(p);
     }
@@ -324,13 +324,13 @@ class SecurityValidator {
     }
 
     console.log('\n' + '='.repeat(50));
-    
-    const totalChecks = this.validationResults.passed.length + 
-                       this.validationResults.warnings.length + 
+
+    const totalChecks = this.validationResults.passed.length +
+                       this.validationResults.warnings.length +
                        this.validationResults.errors.length;
-    
+
     console.log(`Security Score: ${this.validationResults.passed.length}/${totalChecks} checks passed`);
-    
+
     if (this.validationResults.errors.length > 0) {
       console.log('⚠️  Critical security issues detected. Please address errors before production deployment.');
     } else if (this.validationResults.warnings.length > 0) {

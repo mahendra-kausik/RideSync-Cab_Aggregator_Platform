@@ -48,8 +48,12 @@ class UserController {
       const { name, email } = req.body;
 
       const updateData = {};
-      if (name) updateData['profile.name'] = name;
-      if (email) updateData.email = email;
+      if (name) {
+        updateData['profile.name'] = name;
+      }
+      if (email) {
+        updateData.email = email;
+      }
 
       const user = await User.findByIdAndUpdate(
         userId,
@@ -110,7 +114,9 @@ class UserController {
       }
 
       const updateData = { $set: {} };
-      if (name) updateData.$set['profile.name'] = name;
+      if (name) {
+        updateData.$set['profile.name'] = name;
+      }
       if (email !== undefined && email !== null) {
         // Only update email if it's a non-empty string
         if (email.trim() === '') {
@@ -119,14 +125,26 @@ class UserController {
           updateData.$set.email = email.trim();
         }
       }
-      if (licenseNumber) updateData.$set['driverInfo.licenseNumber'] = licenseNumber;
+      if (licenseNumber) {
+        updateData.$set['driverInfo.licenseNumber'] = licenseNumber;
+      }
 
       if (vehicleDetails) {
-        if (vehicleDetails.make) updateData.$set['driverInfo.vehicleDetails.make'] = vehicleDetails.make;
-        if (vehicleDetails.model) updateData.$set['driverInfo.vehicleDetails.model'] = vehicleDetails.model;
-        if (vehicleDetails.plateNumber) updateData.$set['driverInfo.vehicleDetails.plateNumber'] = vehicleDetails.plateNumber;
-        if (vehicleDetails.color) updateData.$set['driverInfo.vehicleDetails.color'] = vehicleDetails.color;
-        if (vehicleDetails.year) updateData.$set['driverInfo.vehicleDetails.year'] = vehicleDetails.year;
+        if (vehicleDetails.make) {
+          updateData.$set['driverInfo.vehicleDetails.make'] = vehicleDetails.make;
+        }
+        if (vehicleDetails.model) {
+          updateData.$set['driverInfo.vehicleDetails.model'] = vehicleDetails.model;
+        }
+        if (vehicleDetails.plateNumber) {
+          updateData.$set['driverInfo.vehicleDetails.plateNumber'] = vehicleDetails.plateNumber;
+        }
+        if (vehicleDetails.color) {
+          updateData.$set['driverInfo.vehicleDetails.color'] = vehicleDetails.color;
+        }
+        if (vehicleDetails.year) {
+          updateData.$set['driverInfo.vehicleDetails.year'] = vehicleDetails.year;
+        }
       }
 
       const user = await User.findByIdAndUpdate(
@@ -368,8 +386,12 @@ class UserController {
         'driverInfo.lastLocationUpdate': new Date()
       };
 
-      if (heading !== undefined) updateData['driverInfo.heading'] = heading;
-      if (speed !== undefined) updateData['driverInfo.speed'] = speed;
+      if (heading !== undefined) {
+        updateData['driverInfo.heading'] = heading;
+      }
+      if (speed !== undefined) {
+        updateData['driverInfo.speed'] = speed;
+      }
 
       const user = await User.findByIdAndUpdate(
         userId,
@@ -540,8 +562,12 @@ class UserController {
       if (role && ['rider', 'driver'].includes(role)) {
         filter.role = role;
       }
-      if (status === 'active') filter.isActive = true;
-      if (status === 'inactive') filter.isActive = false;
+      if (status === 'active') {
+        filter.isActive = true;
+      }
+      if (status === 'inactive') {
+        filter.isActive = false;
+      }
       if (search) {
         filter.$or = [
           { 'profile.name': { $regex: search, $options: 'i' } },
@@ -632,7 +658,7 @@ class UserController {
         }
       ]);
 
-      let stats = rideStats[0] || {
+      const stats = rideStats[0] || {
         totalRides: 0,
         completedRides: 0,
         cancelledRides: 0,
@@ -939,8 +965,12 @@ class UserController {
       }
       if (startDate || endDate) {
         filter.createdAt = {};
-        if (startDate) filter.createdAt.$gte = new Date(startDate);
-        if (endDate) filter.createdAt.$lte = new Date(endDate);
+        if (startDate) {
+          filter.createdAt.$gte = new Date(startDate);
+        }
+        if (endDate) {
+          filter.createdAt.$lte = new Date(endDate);
+        }
       }
 
       const rides = await Ride.find(filter)

@@ -13,11 +13,11 @@ const { AppError } = require('./errorHandler');
 const cspConfig = {
   directives: {
     defaultSrc: ["'self'"],
-    styleSrc: ["'self'", "'unsafe-inline'", "https://api.mapbox.com", "https://fonts.googleapis.com"],
-    scriptSrc: ["'self'", "https://api.mapbox.com"],
-    imgSrc: ["'self'", "data:", "https:", "https://api.mapbox.com"],
-    connectSrc: ["'self'", "https://api.mapbox.com", "wss:", "ws:"],
-    fontSrc: ["'self'", "https://fonts.gstatic.com"],
+    styleSrc: ["'self'", "'unsafe-inline'", 'https://api.mapbox.com', 'https://fonts.googleapis.com'],
+    scriptSrc: ["'self'", 'https://api.mapbox.com'],
+    imgSrc: ["'self'", 'data:', 'https:', 'https://api.mapbox.com'],
+    connectSrc: ["'self'", 'https://api.mapbox.com', 'wss:', 'ws:'],
+    fontSrc: ["'self'", 'https://fonts.gstatic.com'],
     objectSrc: ["'none'"],
     mediaSrc: ["'self'"],
     frameSrc: [],
@@ -200,9 +200,15 @@ const sanitizeInput = (req, res, next) => {
   };
 
   // Sanitize request body, query, and params
-  if (req.body) req.body = sanitizeObject(req.body);
-  if (req.query) req.query = sanitizeObject(req.query);
-  if (req.params) req.params = sanitizeObject(req.params);
+  if (req.body) {
+    req.body = sanitizeObject(req.body);
+  }
+  if (req.query) {
+    req.query = sanitizeObject(req.query);
+  }
+  if (req.params) {
+    req.params = sanitizeObject(req.params);
+  }
 
   next();
 };
@@ -219,7 +225,9 @@ const corsConfig = {
     ];
 
     // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      return callback(null, true);
+    }
 
     if (allowedOrigins.includes(origin)) {
       callback(null, true);

@@ -77,11 +77,11 @@ const securityConfig = {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'", "https://api.mapbox.com", "https://fonts.googleapis.com"],
-        scriptSrc: ["'self'", "https://api.mapbox.com"],
-        imgSrc: ["'self'", "data:", "https:", "https://api.mapbox.com"],
-        connectSrc: ["'self'", "https://api.mapbox.com", "wss:", "ws:"],
-        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://api.mapbox.com', 'https://fonts.googleapis.com'],
+        scriptSrc: ["'self'", 'https://api.mapbox.com'],
+        imgSrc: ["'self'", 'data:', 'https:', 'https://api.mapbox.com'],
+        connectSrc: ["'self'", 'https://api.mapbox.com', 'wss:', 'ws:'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com'],
         objectSrc: ["'none'"],
         mediaSrc: ["'self'"],
         frameSrc: [],

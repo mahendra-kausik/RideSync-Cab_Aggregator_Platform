@@ -19,28 +19,28 @@ const strictCSP = helmet.contentSecurityPolicy({
     styleSrc: [
       "'self'",
       "'unsafe-inline'", // Required for some UI libraries
-      "https://api.mapbox.com",
-      "https://fonts.googleapis.com"
+      'https://api.mapbox.com',
+      'https://fonts.googleapis.com'
     ],
     scriptSrc: [
       "'self'",
-      "https://api.mapbox.com"
+      'https://api.mapbox.com'
     ],
     imgSrc: [
       "'self'",
-      "data:",
-      "https:",
-      "https://api.mapbox.com"
+      'data:',
+      'https:',
+      'https://api.mapbox.com'
     ],
     connectSrc: [
       "'self'",
-      "https://api.mapbox.com",
-      "wss:",
-      "ws:"
+      'https://api.mapbox.com',
+      'wss:',
+      'ws:'
     ],
     fontSrc: [
       "'self'",
-      "https://fonts.gstatic.com"
+      'https://fonts.gstatic.com'
     ],
     objectSrc: ["'none'"],
     mediaSrc: ["'self'"],
@@ -183,9 +183,15 @@ const advancedInputValidation = (req, res, next) => {
   };
 
   // Validate request data
-  if (req.body) req.body = validateObject(req.body, 'body');
-  if (req.query) req.query = validateObject(req.query, 'query');
-  if (req.params) req.params = validateObject(req.params, 'params');
+  if (req.body) {
+    req.body = validateObject(req.body, 'body');
+  }
+  if (req.query) {
+    req.query = validateObject(req.query, 'query');
+  }
+  if (req.params) {
+    req.params = validateObject(req.params, 'params');
+  }
 
   next();
 };
@@ -303,7 +309,9 @@ const apiAbuseDetection = (req, res, next) => {
   const maxRequests = 100;
 
   // Simple in-memory tracking (use Redis in production)
-  if (!global.apiUsage) global.apiUsage = new Map();
+  if (!global.apiUsage) {
+    global.apiUsage = new Map();
+  }
 
   const now = Date.now();
   const userUsage = global.apiUsage.get(userKey) || { requests: [], blocked: false };
@@ -415,7 +423,9 @@ const secureFileUpload = (req, res, next) => {
  */
 const geographicAccessControl = (allowedCountries = []) => {
   return (req, res, next) => {
-    if (allowedCountries.length === 0) return next();
+    if (allowedCountries.length === 0) {
+      return next();
+    }
 
     // In production, use a GeoIP service
     const clientIP = req.ip;

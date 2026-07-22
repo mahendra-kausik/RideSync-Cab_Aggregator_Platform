@@ -335,7 +335,9 @@ module.exports = {
 
   // Custom validation helpers
   validateCoordinates: (coords) => {
-    if (!Array.isArray(coords) || coords.length !== 2) return false;
+    if (!Array.isArray(coords) || coords.length !== 2) {
+      return false;
+    }
     const [lng, lat] = coords;
     return lng >= -180 && lng <= 180 && lat >= -90 && lat <= 90;
   },

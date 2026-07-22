@@ -136,7 +136,7 @@ async function seedDatabase() {
       }
     }
 
-    console.log(`\n🎉 Database seeding completed!`);
+    console.log('\n🎉 Database seeding completed!');
     console.log(`📊 Created ${createdUsers.length} users:`);
     console.log(`   - ${createdUsers.filter(u => u.role === 'admin').length} admin(s)`);
     console.log(`   - ${createdUsers.filter(u => u.role === 'rider').length} rider(s)`);

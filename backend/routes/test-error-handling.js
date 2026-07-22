@@ -21,8 +21,8 @@ if (process.env.NODE_ENV === 'development') {
     age: Joi.number().min(18).max(100).required()
   });
 
-  router.post('/validation-error', 
-    validate(testValidationSchema), 
+  router.post('/validation-error',
+    validate(testValidationSchema),
     asyncHandler(async (req, res) => {
       res.json({ success: true, message: 'Validation passed' });
     })
@@ -72,9 +72,9 @@ if (process.env.NODE_ENV === 'development') {
    */
   router.post('/security-test', asyncHandler(async (req, res) => {
     // This endpoint will trigger security monitoring for malicious payloads
-    res.json({ 
+    res.json({
       message: 'Security test endpoint',
-      received: req.body 
+      received: req.body
     });
   }));
 
@@ -83,7 +83,7 @@ if (process.env.NODE_ENV === 'development') {
    */
   router.get('/external-service-test', asyncHandler(async (req, res) => {
     const gracefulDegradation = require('../services/GracefulDegradationService');
-    
+
     // Test maps service fallback
     const mapsResult = await gracefulDegradation.getMapsData(
       () => {
@@ -116,7 +116,7 @@ if (process.env.NODE_ENV === 'development') {
   router.get('/circuit-breaker-status', asyncHandler(async (req, res) => {
     const gracefulDegradation = require('../services/GracefulDegradationService');
     const status = gracefulDegradation.getHealthStatus();
-    
+
     res.json({
       message: 'Circuit breaker status',
       status
@@ -128,13 +128,13 @@ if (process.env.NODE_ENV === 'development') {
    */
   router.post('/log-test', asyncHandler(async (req, res) => {
     const logger = require('../utils/logger');
-    
+
     logger.info('Test info log', { test: true });
     logger.warn('Test warning log', { test: true });
     logger.error('Test error log', new Error('Test error'), { test: true });
     logger.logSecurityEvent('TEST_SECURITY_EVENT', { test: true });
     logger.logPerformance('test_operation', 1500, { test: true });
-    
+
     res.json({ message: 'Logging test completed - check logs' });
   }));
 

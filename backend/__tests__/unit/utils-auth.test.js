@@ -1,12 +1,12 @@
 /**
  * UNIT TESTS for AuthUtils
- * 
+ *
  * Tests individual authentication utility functions in isolation
  * - Password hashing and comparison
  * - JWT token generation and verification
  * - OTP generation
  * - Token payload creation
- * 
+ *
  * Characteristics:
  * - Fast execution (<1 second per test)
  * - No external dependencies

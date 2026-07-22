@@ -541,7 +541,7 @@ class RideController {
       } = req.query;
 
       // Build query
-      let query = {};
+      const query = {};
 
       // Role-based filtering
       if (userRole === 'admin') {
@@ -844,7 +844,9 @@ class RideController {
    * Validate coordinates are within reasonable bounds
    */
   static validateCoordinates(coords) {
-    if (!Array.isArray(coords) || coords.length !== 2) return false;
+    if (!Array.isArray(coords) || coords.length !== 2) {
+      return false;
+    }
     const [lng, lat] = coords;
     return lng >= -180 && lng <= 180 && lat >= -90 && lat <= 90;
   }
@@ -905,9 +907,15 @@ class RideController {
 
     const allowedRoles = transitions[currentStatus]?.[newStatus] || [];
 
-    if (allowedRoles.includes('rider') && isRider) return true;
-    if (allowedRoles.includes('driver') && isDriver) return true;
-    if (allowedRoles.includes('admin') && userRole === 'admin') return true;
+    if (allowedRoles.includes('rider') && isRider) {
+      return true;
+    }
+    if (allowedRoles.includes('driver') && isDriver) {
+      return true;
+    }
+    if (allowedRoles.includes('admin') && userRole === 'admin') {
+      return true;
+    }
 
     return false;
   }

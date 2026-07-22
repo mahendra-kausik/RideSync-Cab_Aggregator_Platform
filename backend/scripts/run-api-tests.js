@@ -67,14 +67,14 @@ newman.run(config, function (err, summary) {
 
   // Exit with appropriate code
   const exitCode = summary.run.failures.length > 0 ? 1 : 0;
-  
+
   if (exitCode === 0) {
     console.log('\n✅ All API tests passed!');
   } else {
     console.log('\n❌ Some API tests failed. Check the reports for details.');
   }
 
-  console.log(`\n📄 Detailed reports available at:`);
+  console.log('\n📄 Detailed reports available at:');
   console.log(`HTML: ${config.reporter.html.export}`);
   console.log(`JSON: ${config.reporter.json.export}`);
 

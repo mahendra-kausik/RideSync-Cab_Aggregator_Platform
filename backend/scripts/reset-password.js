@@ -35,7 +35,7 @@ async function resetPassword(phone, newPassword) {
         );
 
         console.log('✅ Password reset successfully!');
-        console.log(`📝 You can now login with:`);
+        console.log('📝 You can now login with:');
         console.log(`   Phone: ${phone}`);
         console.log(`   Password: ${newPassword}`);
 

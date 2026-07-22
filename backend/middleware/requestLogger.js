@@ -10,7 +10,7 @@ const logger = require('../utils/logger');
  */
 const requestLogger = (req, res, next) => {
   const startTime = Date.now();
-  
+
   // Generate unique request ID if not present
   if (!req.get('X-Request-ID')) {
     req.headers['x-request-id'] = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -23,12 +23,12 @@ const requestLogger = (req, res, next) => {
 
   // Override res.end to capture response time
   const originalEnd = res.end;
-  res.end = function(...args) {
+  res.end = function (...args) {
     const responseTime = Date.now() - startTime;
-    
+
     // Log the request
     logger.logRequest(req, res, responseTime);
-    
+
     // Log slow requests
     if (responseTime > 2000) {
       logger.warn('Slow request detected', {
@@ -57,7 +57,7 @@ function monitorSecurityEvents(req) {
   const userAgent = req.get('User-Agent') || '';
   const url = req.url.toLowerCase();
   const body = req.body || {};
-  
+
   // Check for suspicious user agents
   const suspiciousAgents = [
     'sqlmap',
@@ -68,7 +68,7 @@ function monitorSecurityEvents(req) {
     'owasp',
     'dirbuster'
   ];
-  
+
   if (suspiciousAgents.some(agent => userAgent.toLowerCase().includes(agent))) {
     logger.logSecurityEvent('SUSPICIOUS_USER_AGENT', {
       userAgent,
@@ -82,9 +82,9 @@ function monitorSecurityEvents(req) {
   const sqlPatterns = [
     /(\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC)\b)/i,
     /(UNION\s+SELECT)/i,
-    /(\'\s*OR\s*\'\s*=\s*\')/i,
-    /(\'\s*OR\s*1\s*=\s*1)/i,
-    /(--|\#|\/\*)/
+    /('\s*OR\s*'\s*=\s*')/i,
+    /('\s*OR\s*1\s*=\s*1)/i,
+    /(--|#|\/\*)/
   ];
 
   const checkForSQLInjection = (value) => {
@@ -108,7 +108,7 @@ function monitorSecurityEvents(req) {
   const checkObjectForInjection = (obj, path = '') => {
     for (const [key, value] of Object.entries(obj)) {
       const currentPath = path ? `${path}.${key}` : key;
-      
+
       if (typeof value === 'string' && checkForSQLInjection(value)) {
         logger.logSecurityEvent('SQL_INJECTION_ATTEMPT', {
           type: 'BODY',
@@ -158,7 +158,7 @@ function monitorSecurityEvents(req) {
   const checkObjectForXSS = (obj, path = '') => {
     for (const [key, value] of Object.entries(obj)) {
       const currentPath = path ? `${path}.${key}` : key;
-      
+
       if (typeof value === 'string' && checkForXSS(value)) {
         logger.logSecurityEvent('XSS_ATTEMPT', {
           type: 'BODY',
@@ -210,7 +210,7 @@ function monitorSecurityEvents(req) {
  */
 const errorRequestLogger = (err, req, res, next) => {
   const responseTime = Date.now() - (req.startTime || Date.now());
-  
+
   logger.error('Request failed', err, {
     method: req.method,
     url: req.url,

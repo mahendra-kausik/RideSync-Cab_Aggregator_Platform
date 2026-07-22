@@ -9,7 +9,7 @@ const otpSchema = new mongoose.Schema({
     type: String,
     required: true,
     validate: {
-      validator: function(phone) {
+      validator: function (phone) {
         return /^\+?[1-9]\d{1,14}$/.test(phone);
       },
       message: 'Invalid phone number format'
@@ -20,7 +20,7 @@ const otpSchema = new mongoose.Schema({
     type: String,
     required: true,
     validate: {
-      validator: function(otp) {
+      validator: function (otp) {
         return /^\d{6}$/.test(otp);
       },
       message: 'OTP must be 6 digits'
@@ -51,11 +51,11 @@ otpSchema.index({ phone: 1, isUsed: 1 });
 otpSchema.index({ phone: 1, createdAt: -1 });
 
 // Static methods
-otpSchema.statics.generateOTP = function() {
+otpSchema.statics.generateOTP = function () {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-otpSchema.statics.createOTP = async function(phone) {
+otpSchema.statics.createOTP = async function (phone) {
   await this.updateMany({ phone: phone, isUsed: false }, { isUsed: true });
   const otp = this.generateOTP();
   const otpDoc = new this({

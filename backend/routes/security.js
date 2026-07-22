@@ -17,14 +17,14 @@ const router = express.Router();
  * @desc    Get recent security events
  * @access  Private (Admin only)
  */
-router.get('/events', 
-  requireAuth, 
-  requireAdmin, 
+router.get('/events',
+  requireAuth,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const { limit = 100, severity } = req.query;
-    
+
     const events = await securityLogger.getRecentSecurityEvents(
-      parseInt(limit), 
+      parseInt(limit),
       severity
     );
 
@@ -44,9 +44,9 @@ router.get('/events',
  * @desc    Get security statistics
  * @access  Private (Admin only)
  */
-router.get('/stats', 
-  requireAuth, 
-  requireAdmin, 
+router.get('/stats',
+  requireAuth,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const securityStats = await securityLogger.getSecurityStats();
     const sessionStats = sessionManager.getStats();
@@ -67,9 +67,9 @@ router.get('/stats',
  * @desc    Get comprehensive security dashboard
  * @access  Private (Admin only)
  */
-router.get('/dashboard', 
-  requireAuth, 
-  requireAdmin, 
+router.get('/dashboard',
+  requireAuth,
+  requireAdmin,
   getSecurityDashboard
 );
 
@@ -78,9 +78,9 @@ router.get('/dashboard',
  * @desc    Get active sessions for all users
  * @access  Private (Admin only)
  */
-router.get('/sessions', 
-  requireAuth, 
-  requireAdmin, 
+router.get('/sessions',
+  requireAuth,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     // Note: This would need to be implemented in sessionManager
     // For now, return session statistics
@@ -103,14 +103,14 @@ router.get('/sessions',
  * @desc    Invalidate a specific session
  * @access  Private (Admin only)
  */
-router.post('/sessions/:sessionId/invalidate', 
-  requireAuth, 
-  requireAdmin, 
+router.post('/sessions/:sessionId/invalidate',
+  requireAuth,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const { sessionId } = req.params;
-    
+
     sessionManager.invalidateSession(sessionId);
-    
+
     // Log admin action
     await securityLogger.logAdminAction('SESSION_INVALIDATED', {
       adminId: req.user._id,
@@ -132,14 +132,14 @@ router.post('/sessions/:sessionId/invalidate',
  * @desc    Invalidate all sessions for a user
  * @access  Private (Admin only)
  */
-router.post('/users/:userId/invalidate-sessions', 
-  requireAuth, 
-  requireAdmin, 
+router.post('/users/:userId/invalidate-sessions',
+  requireAuth,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const { userId } = req.params;
-    
+
     sessionManager.invalidateUserSessions(userId);
-    
+
     // Log admin action
     await securityLogger.logAdminAction('USER_SESSIONS_INVALIDATED', {
       adminId: req.user._id,
@@ -161,20 +161,20 @@ router.post('/users/:userId/invalidate-sessions',
  * @desc    Security health check
  * @access  Private (Admin only)
  */
-router.get('/health', 
-  requireAuth, 
-  requireAdmin, 
+router.get('/health',
+  requireAuth,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const stats = await securityLogger.getSecurityStats();
     const sessionStats = sessionManager.getStats();
-    
+
     // Determine health status based on security events
     const criticalEvents = stats.severityBreakdown.critical || 0;
     const highEvents = stats.severityBreakdown.high || 0;
-    
+
     let healthStatus = 'healthy';
-    let alerts = [];
-    
+    const alerts = [];
+
     if (criticalEvents > 0) {
       healthStatus = 'critical';
       alerts.push(`${criticalEvents} critical security events detected`);
@@ -182,7 +182,7 @@ router.get('/health',
       healthStatus = 'warning';
       alerts.push(`${highEvents} high-severity security events detected`);
     }
-    
+
     if (sessionStats.activeSessions > 1000) {
       alerts.push('High number of active sessions');
     }

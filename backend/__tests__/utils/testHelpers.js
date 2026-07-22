@@ -79,7 +79,7 @@ const dbHelpers = {
     for (let i = 0; i < rides; i++) {
       const rider = createdData.riders[i % createdData.riders.length];
       const driver = createdData.drivers[i % createdData.drivers.length];
-      
+
       const ride = await global.testUtils.createTestRide({
         riderId: rider._id,
         driverId: Math.random() > 0.3 ? driver._id : undefined, // 70% have drivers
@@ -157,7 +157,7 @@ const mockData = {
     const makes = ['Toyota', 'Honda', 'Ford', 'Chevrolet', 'Nissan', 'Hyundai'];
     const models = ['Camry', 'Accord', 'Fusion', 'Malibu', 'Altima', 'Elantra'];
     const colors = ['White', 'Black', 'Silver', 'Blue', 'Red', 'Gray'];
-    
+
     return {
       make: makes[Math.floor(Math.random() * makes.length)],
       model: models[Math.floor(Math.random() * models.length)],
@@ -193,14 +193,14 @@ const apiHelpers = {
    */
   async waitFor(condition, timeout = 5000, interval = 100) {
     const startTime = Date.now();
-    
+
     while (Date.now() - startTime < timeout) {
       if (await condition()) {
         return true;
       }
       await new Promise(resolve => setTimeout(resolve, interval));
     }
-    
+
     throw new Error(`Condition not met within ${timeout}ms`);
   }
 };
@@ -214,13 +214,13 @@ const socketHelpers = {
    */
   createMockSocket(userId, role = 'rider') {
     const events = {};
-    
+
     return {
       id: `socket_${userId}`,
       userId,
       role,
       rooms: new Set(),
-      
+
       // Mock socket methods
       emit: jest.fn(),
       on: jest.fn((event, handler) => {
@@ -234,14 +234,14 @@ const socketHelpers = {
         this.rooms.delete(room);
       }),
       disconnect: jest.fn(),
-      
+
       // Test helpers
       trigger: (event, data) => {
         if (events[event]) {
           events[event](data);
         }
       },
-      
+
       getEvents: () => events
     };
   },
@@ -294,7 +294,7 @@ const validationHelpers = {
    * Check if object has required properties
    */
   hasRequiredProperties(obj, requiredProps) {
-    return requiredProps.every(prop => obj.hasOwnProperty(prop));
+    return requiredProps.every(prop => Object.prototype.hasOwnProperty.call(obj, prop));
   },
 
   /**
@@ -337,7 +337,7 @@ function getRandomRideStatus() {
 function generatePlateNumber() {
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const numbers = '0123456789';
-  
+
   let plate = '';
   // 3 letters
   for (let i = 0; i < 3; i++) {
@@ -347,7 +347,7 @@ function generatePlateNumber() {
   for (let i = 0; i < 3; i++) {
     plate += numbers[Math.floor(Math.random() * numbers.length)];
   }
-  
+
   return plate;
 }
 

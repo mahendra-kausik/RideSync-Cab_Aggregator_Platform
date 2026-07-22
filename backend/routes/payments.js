@@ -11,28 +11,28 @@ const router = express.Router();
  */
 
 // Process payment for completed ride
-router.post('/process', 
-  authenticateToken, 
-  validatePaymentData, 
+router.post('/process',
+  authenticateToken,
+  validatePaymentData,
   PaymentController.processPayment
 );
 
 // Submit rating for completed ride
-router.post('/rate', 
-  authenticateToken, 
-  validateRatingData, 
+router.post('/rate',
+  authenticateToken,
+  validateRatingData,
   PaymentController.submitRating
 );
 
 // Get payment history
-router.get('/history', 
-  authenticateToken, 
+router.get('/history',
+  authenticateToken,
   PaymentController.getPaymentHistory
 );
 
 // Get receipt for specific ride
-router.get('/receipt/:rideId', 
-  authenticateToken, 
+router.get('/receipt/:rideId',
+  authenticateToken,
   PaymentController.getReceipt
 );
 

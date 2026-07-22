@@ -1,12 +1,12 @@
 const express = require('express');
 const RideController = require('../controllers/rideController');
 const { asyncHandler } = require('../middleware/errorHandler');
-const { 
-  requireAuth, 
-  requireRider, 
-  requireDriver, 
+const {
+  requireAuth,
+  requireRider,
+  requireDriver,
   requireRiderOrDriver,
-  requireAdmin 
+  requireAdmin
 } = require('../middleware/auth');
 const {
   validateRideBooking,
@@ -35,8 +35,8 @@ const router = express.Router();
  * @desc    Get fare estimation for a route
  * @access  Public (can be used without authentication for quick estimates)
  */
-router.post('/estimate', 
-  validateFareEstimate, 
+router.post('/estimate',
+  validateFareEstimate,
   asyncHandler(RideController.getFareEstimate)
 );
 
@@ -47,11 +47,11 @@ router.post('/estimate',
  * @desc    Book a new ride
  * @access  Private (Rider only)
  */
-router.post('/book', 
-  requireAuth, 
-  requireRider, 
+router.post('/book',
+  requireAuth,
+  requireRider,
   rideBookingRateLimiter,
-  validateRideBooking, 
+  validateRideBooking,
   asyncHandler(RideController.bookRide)
 );
 
@@ -60,9 +60,9 @@ router.post('/book',
  * @desc    Get ride history with filtering and pagination
  * @access  Private (Rider, Driver, Admin)
  */
-router.get('/history', 
-  requireAuth, 
-  validateRideHistoryQuery, 
+router.get('/history',
+  requireAuth,
+  validateRideHistoryQuery,
   asyncHandler(RideController.getRideHistory)
 );
 
@@ -71,10 +71,10 @@ router.get('/history',
  * @desc    Get pending ride requests for driver
  * @access  Private (Driver only)
  */
-router.get('/driver/pending', 
-  requireAuth, 
-  requireDriver, 
-  validatePendingRidesQuery, 
+router.get('/driver/pending',
+  requireAuth,
+  requireDriver,
+  validatePendingRidesQuery,
   asyncHandler(RideController.getPendingRides)
 );
 
@@ -83,9 +83,9 @@ router.get('/driver/pending',
  * @desc    Get driver's active ride
  * @access  Private (Driver only)
  */
-router.get('/driver/active', 
-  requireAuth, 
-  requireDriver, 
+router.get('/driver/active',
+  requireAuth,
+  requireDriver,
   asyncHandler(RideController.getActiveRide)
 );
 
@@ -94,8 +94,8 @@ router.get('/driver/active',
  * @desc    Get count of available drivers in area
  * @access  Private (Authenticated users)
  */
-router.get('/drivers/available', 
-  requireAuth, 
+router.get('/drivers/available',
+  requireAuth,
   asyncHandler(RideController.getAvailableDriversCount)
 );
 
@@ -104,9 +104,9 @@ router.get('/drivers/available',
  * @desc    Get single ride details
  * @access  Private (Rider, Driver, Admin - must be associated with the ride)
  */
-router.get('/:id', 
-  requireAuth, 
-  validateMongoIdParam, 
+router.get('/:id',
+  requireAuth,
+  validateMongoIdParam,
   asyncHandler(RideController.getRideDetails)
 );
 
@@ -115,10 +115,10 @@ router.get('/:id',
  * @desc    Accept a ride request
  * @access  Private (Driver only)
  */
-router.post('/:id/accept', 
-  requireAuth, 
-  requireDriver, 
-  validateMongoIdParam, 
+router.post('/:id/accept',
+  requireAuth,
+  requireDriver,
+  validateMongoIdParam,
   asyncHandler(RideController.acceptRide)
 );
 
@@ -127,10 +127,10 @@ router.post('/:id/accept',
  * @desc    Find and assign nearest driver to a ride
  * @access  Private (Admin only, or system use)
  */
-router.post('/:id/find-driver', 
-  requireAuth, 
-  requireAdmin, 
-  validateMongoIdParam, 
+router.post('/:id/find-driver',
+  requireAuth,
+  requireAdmin,
+  validateMongoIdParam,
   asyncHandler(RideController.findDriver)
 );
 
@@ -139,11 +139,11 @@ router.post('/:id/find-driver',
  * @desc    Update ride status
  * @access  Private (Rider, Driver, Admin - with role-based restrictions)
  */
-router.put('/:id/status', 
-  requireAuth, 
-  requireRiderOrDriver, 
-  validateMongoIdParam, 
-  validateRideStatusUpdate, 
+router.put('/:id/status',
+  requireAuth,
+  requireRiderOrDriver,
+  validateMongoIdParam,
+  validateRideStatusUpdate,
   asyncHandler(RideController.updateRideStatus)
 );
 
@@ -152,10 +152,10 @@ router.put('/:id/status',
  * @desc    Complete a ride
  * @access  Private (Driver only)
  */
-router.put('/:id/complete', 
-  requireAuth, 
-  requireDriver, 
-  validateMongoIdParam, 
+router.put('/:id/complete',
+  requireAuth,
+  requireDriver,
+  validateMongoIdParam,
   asyncHandler(RideController.completeRide)
 );
 
@@ -166,10 +166,10 @@ router.put('/:id/complete',
  * @desc    Get all rides for admin dashboard
  * @access  Private (Admin only)
  */
-router.get('/admin/all', 
-  requireAuth, 
-  requireAdmin, 
-  validateRideHistoryQuery, 
+router.get('/admin/all',
+  requireAuth,
+  requireAdmin,
+  validateRideHistoryQuery,
   asyncHandler(RideController.getRideHistory)
 );
 

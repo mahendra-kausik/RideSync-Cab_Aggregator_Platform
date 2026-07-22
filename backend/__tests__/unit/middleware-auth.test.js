@@ -1,12 +1,12 @@
 /**
  * UNIT TESTS for Authentication Middleware
- * 
+ *
  * Tests auth middleware with mocked dependencies
  * - Token authentication
  * - Role-based authorization
  * - User verification
  * - Error handling
- * 
+ *
  * Characteristics:
  * - Fast execution (<1 second per test)
  * - Mocked User model and external services

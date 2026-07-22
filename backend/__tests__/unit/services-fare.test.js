@@ -1,13 +1,13 @@
 /**
  * UNIT TESTS for FareService
- * 
+ *
  * Tests fare calculation logic in isolation
  * - Base fare calculation
  * - Distance and time-based pricing
  * - Surge pricing
  * - Service level multipliers
  * - Input validation
- * 
+ *
  * Characteristics:
  * - Fast execution (<1 second per test)
  * - No database dependencies

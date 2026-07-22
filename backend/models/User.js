@@ -11,26 +11,34 @@ const crypto = require('crypto');
 const vehicleSchema = new mongoose.Schema({
   make: {
     type: String,
-    required: function () { return this.parent().role === 'driver'; },
+    required: function () {
+      return this.parent().role === 'driver';
+    },
     trim: true,
     maxlength: 50
   },
   model: {
     type: String,
-    required: function () { return this.parent().role === 'driver'; },
+    required: function () {
+      return this.parent().role === 'driver';
+    },
     trim: true,
     maxlength: 50
   },
   plateNumber: {
     type: String,
-    required: function () { return this.parent().role === 'driver'; },
+    required: function () {
+      return this.parent().role === 'driver';
+    },
     trim: true,
     uppercase: true,
     maxlength: 20
   },
   color: {
     type: String,
-    required: function () { return this.parent().role === 'driver'; },
+    required: function () {
+      return this.parent().role === 'driver';
+    },
     trim: true,
     maxlength: 30
   },
@@ -45,13 +53,17 @@ const vehicleSchema = new mongoose.Schema({
 const driverInfoSchema = new mongoose.Schema({
   licenseNumber: {
     type: String,
-    required: function () { return this.parent().role === 'driver'; },
+    required: function () {
+      return this.parent().role === 'driver';
+    },
     trim: true,
     maxlength: 50
   },
   vehicleDetails: {
     type: vehicleSchema,
-    required: function () { return this.parent().role === 'driver'; }
+    required: function () {
+      return this.parent().role === 'driver';
+    }
   },
   isAvailable: {
     type: Boolean,
@@ -86,11 +98,15 @@ const userSchema = new mongoose.Schema({
   // Authentication fields
   phone: {
     type: String,
-    required: function () { return this.role !== 'admin'; },
+    required: function () {
+      return this.role !== 'admin';
+    },
     sparse: true, // Allows null values to be non-unique
     validate: {
       validator: function (phone) {
-        if (!phone && this.role === 'admin') return true;
+        if (!phone && this.role === 'admin') {
+          return true;
+        }
         return /^\+?[1-9]\d{1,14}$/.test(phone); // E.164 format
       },
       message: 'Invalid phone number format'
@@ -105,12 +121,16 @@ const userSchema = new mongoose.Schema({
   },
   email: {
     type: String,
-    required: function () { return this.role === 'admin'; },
+    required: function () {
+      return this.role === 'admin';
+    },
     sparse: true,
     lowercase: true,
     validate: {
       validator: function (email) {
-        if (!email && this.role !== 'admin') return true;
+        if (!email && this.role !== 'admin') {
+          return true;
+        }
         // Allow .local domains for development
         return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
       },
@@ -173,7 +193,9 @@ const userSchema = new mongoose.Schema({
   // Driver-specific information
   driverInfo: {
     type: driverInfoSchema,
-    required: function () { return this.role === 'driver'; }
+    required: function () {
+      return this.role === 'driver';
+    }
   },
 
   // Account status
@@ -249,14 +271,18 @@ userSchema.index({ createdAt: -1 });
 
 // Virtual for average rating calculation
 userSchema.virtual('profile.averageRating').get(function () {
-  if (this.profile.totalRatings === 0) return 0;
+  if (this.profile.totalRatings === 0) {
+    return 0;
+  }
   return Math.round((this.profile.rating / this.profile.totalRatings) * 10) / 10;
 });
 
 // Pre-save middleware for password hashing
 userSchema.pre('save', async function (next) {
   // Only hash password if it's modified
-  if (!this.isModified('password')) return next();
+  if (!this.isModified('password')) {
+    return next();
+  }
 
   try {
     // Hash password with bcrypt (minimum 10 salt rounds as per requirements)
@@ -409,10 +435,14 @@ userSchema.pre('save', function (next) {
 
 // Post-find middleware for decrypting PII fields (for display)
 userSchema.post(['find', 'findOne', 'findOneAndUpdate'], function (docs) {
-  if (!encryptionUtils.isAvailable()) return;
+  if (!encryptionUtils.isAvailable()) {
+    return;
+  }
 
   const decrypt = (doc) => {
-    if (!doc) return;
+    if (!doc) {
+      return;
+    }
 
     // Decrypt PII fields directly on the document
     PII_FIELDS.forEach(field => {
@@ -437,7 +467,9 @@ userSchema.post(['find', 'findOne', 'findOneAndUpdate'], function (docs) {
 
 // Post-init middleware to decrypt fields when document is loaded (including populated docs)
 userSchema.post('init', function (doc) {
-  if (!encryptionUtils.isAvailable() || !doc) return;
+  if (!encryptionUtils.isAvailable() || !doc) {
+    return;
+  }
 
   // Decrypt PII fields
   PII_FIELDS.forEach(field => {

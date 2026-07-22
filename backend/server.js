@@ -17,11 +17,11 @@ const dbConnection = require('./config/database');
 const { User, Ride, OTP } = require('./models');
 
 // Import enhanced error handling
-const { 
-  globalErrorHandler, 
-  asyncHandler, 
-  handleUnhandledRejection, 
-  handleUncaughtException 
+const {
+  globalErrorHandler,
+  asyncHandler,
+  handleUnhandledRejection,
+  handleUncaughtException
 } = require('./middleware/errorHandler');
 
 const { generalApiRateLimiter } = require('./middleware/validation');
@@ -102,7 +102,7 @@ app.use(securityAuditLogger);
 app.use(tokenRotationMiddleware);
 
 // Body parsing middleware with size limits
-app.use(express.json({ 
+app.use(express.json({
   limit: '1mb',
   verify: (req, res, buf) => {
     // Verify JSON payload integrity
@@ -113,8 +113,8 @@ app.use(express.json({
     }
   }
 }));
-app.use(express.urlencoded({ 
-  extended: true, 
+app.use(express.urlencoded({
+  extended: true,
   limit: '1mb',
   parameterLimit: 100 // Limit number of parameters
 }));
@@ -126,9 +126,9 @@ app.use(requestLogger);
 app.get('/health', asyncHandler(async (req, res) => {
   const dbStatus = dbConnection.getConnectionStatus();
   const degradationStatus = gracefulDegradation.getHealthStatus();
-  
-  const overallStatus = dbStatus.isConnected && degradationStatus.overallHealth === 'healthy' 
-    ? 'OK' 
+
+  const overallStatus = dbStatus.isConnected && degradationStatus.overallHealth === 'healthy'
+    ? 'OK'
     : 'DEGRADED';
 
   res.json({
@@ -162,18 +162,18 @@ app.use('/api/security', securityRoutes);
 // Test routes (development only)
 if (process.env.NODE_ENV === 'development') {
   app.use('/api/test', require('./routes/test-error-handling'));
-  
+
   // Temporary endpoint to clear active rides
   app.post('/api/dev/clear-active-rides', asyncHandler(async (req, res) => {
     const { Ride } = require('./models');
     const result = await Ride.updateMany(
       { status: { $in: ['requested', 'matched', 'accepted', 'in_progress'] } },
-      { 
+      {
         status: 'cancelled',
         'timeline.cancelledAt': new Date()
       }
     );
-    
+
     res.json({
       success: true,
       message: `Cancelled ${result.modifiedCount} active rides`,
@@ -275,10 +275,10 @@ async function startServer() {
       console.log(`🚀 Backend server running on port ${PORT}`);
       console.log(`📊 Health check: http://localhost:${PORT}/health`);
       console.log(`🔗 API base: http://localhost:${PORT}/api`);
-      console.log(`🔌 Socket.IO server initialized`);
+      console.log('🔌 Socket.IO server initialized');
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`🛡️  Enhanced error handling and validation enabled`);
-      console.log(`⚡ Circuit breakers initialized for external services`);
+      console.log('🛡️  Enhanced error handling and validation enabled');
+      console.log('⚡ Circuit breakers initialized for external services');
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error.message);

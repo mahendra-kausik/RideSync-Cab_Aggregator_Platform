@@ -15,7 +15,7 @@ const { User } = require('../models');
 const getSecurityDashboard = asyncHandler(async (req, res) => {
   const securityStats = await securityLogger.getSecurityStats();
   const sessionStats = sessionManager.getStats();
-  
+
   // Get user security metrics
   const userStats = await User.aggregate([
     {
@@ -71,27 +71,27 @@ const getSecurityDashboard = asyncHandler(async (req, res) => {
  */
 function calculateSecurityScore(securityStats, sessionStats, userMetrics) {
   let score = 100;
-  
+
   // Deduct points for security events
   const criticalEvents = securityStats.severityBreakdown?.critical || 0;
   const highEvents = securityStats.severityBreakdown?.high || 0;
-  
+
   score -= criticalEvents * 10; // -10 points per critical event
   score -= highEvents * 5;      // -5 points per high event
-  
+
   // Deduct points for session issues
   if (sessionStats.blacklistedTokens > 100) {
     score -= 10;
   }
-  
+
   // Deduct points for unverified users
-  const verificationRate = userMetrics.totalUsers > 0 ? 
+  const verificationRate = userMetrics.totalUsers > 0 ?
     (userMetrics.verifiedUsers / userMetrics.totalUsers) * 100 : 100;
-  
+
   if (verificationRate < 80) {
     score -= (80 - verificationRate) / 2;
   }
-  
+
   return Math.max(0, Math.min(100, score));
 }
 

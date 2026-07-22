@@ -56,7 +56,7 @@ class ErrorLogger {
         if (!fs.existsSync(logsDir)) {
           fs.mkdirSync(logsDir, { recursive: true });
         }
-        
+
         const logFile = path.join(logsDir, `error-${new Date().toISOString().split('T')[0]}.log`);
         fs.appendFileSync(logFile, JSON.stringify(logEntry) + '\n');
       } catch (logError) {
@@ -71,7 +71,7 @@ class ErrorLogger {
  */
 const formatErrorResponse = (error, req) => {
   const timestamp = new Date().toISOString();
-  
+
   // Base error response structure
   const errorResponse = {
     success: false,
@@ -116,7 +116,7 @@ const handleSpecificErrors = (error) => {
       message: err.message,
       value: err.value
     }));
-    
+
     return {
       statusCode: 400,
       code: 'VALIDATION_ERROR',
@@ -206,10 +206,10 @@ const globalErrorHandler = (error, req, res, next) => {
 
   // Handle specific error types
   const handledError = handleSpecificErrors(error);
-  
+
   // Create standardized error response
   const errorResponse = formatErrorResponse(handledError, req);
-  
+
   // Send error response
   res.status(handledError.statusCode).json(errorResponse);
 };
@@ -245,7 +245,7 @@ const handleUnhandledRejection = () => {
   process.on('unhandledRejection', (reason, promise) => {
     console.error('🚨 Unhandled Promise Rejection:', reason);
     ErrorLogger.logError(new Error(`Unhandled Promise Rejection: ${reason}`));
-    
+
     // Graceful shutdown
     process.exit(1);
   });
@@ -258,7 +258,7 @@ const handleUncaughtException = () => {
   process.on('uncaughtException', (error) => {
     console.error('🚨 Uncaught Exception:', error);
     ErrorLogger.logError(error);
-    
+
     // Graceful shutdown
     process.exit(1);
   });

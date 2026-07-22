@@ -17,7 +17,7 @@ class AuthUtils {
     if (!password) {
       throw new Error('Password is required');
     }
-    
+
     const saltRounds = 12; // Exceeds minimum requirement of 10
     return await bcrypt.hash(password, saltRounds);
   }
@@ -32,7 +32,7 @@ class AuthUtils {
     if (!password || !hashedPassword) {
       return false;
     }
-    
+
     return await bcrypt.compare(password, hashedPassword);
   }
 
@@ -48,7 +48,7 @@ class AuthUtils {
       throw new Error('JWT_SECRET environment variable is required');
     }
 
-    return jwt.sign(payload, secret, { 
+    return jwt.sign(payload, secret, {
       expiresIn,
       issuer: 'cab-aggregator',
       audience: 'cab-aggregator-users'
@@ -66,7 +66,7 @@ class AuthUtils {
       throw new Error('JWT_SECRET environment variable is required');
     }
 
-    return jwt.sign(payload, secret, { 
+    return jwt.sign(payload, secret, {
       expiresIn: '7d',
       issuer: 'cab-aggregator',
       audience: 'cab-aggregator-users'
@@ -109,7 +109,7 @@ class AuthUtils {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return null;
     }
-    
+
     return authHeader.substring(7); // Remove 'Bearer ' prefix
   }
 
@@ -121,11 +121,11 @@ class AuthUtils {
   static generateOTP(length = 6) {
     const digits = '0123456789';
     let otp = '';
-    
+
     for (let i = 0; i < length; i++) {
       otp += digits[Math.floor(Math.random() * digits.length)];
     }
-    
+
     return otp;
   }
 

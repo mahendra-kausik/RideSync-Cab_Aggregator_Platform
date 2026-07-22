@@ -13,7 +13,7 @@ class SecurityLogger {
     this.auditLogFile = path.join(this.logDir, 'audit.log');
     this.maxLogSize = 10 * 1024 * 1024; // 10MB
     this.maxLogFiles = 5;
-    
+
     this.initializeLogDirectory();
   }
 
@@ -85,10 +85,10 @@ class SecurityLogger {
   async writeLog(logFile, logEntry) {
     try {
       const logLine = JSON.stringify(logEntry) + '\n';
-      
+
       // Check file size and rotate if necessary
       await this.rotateLogIfNeeded(logFile);
-      
+
       // Append to log file
       await fs.appendFile(logFile, logLine);
     } catch (error) {
@@ -103,20 +103,20 @@ class SecurityLogger {
   async rotateLogIfNeeded(logFile) {
     try {
       const stats = await fs.stat(logFile);
-      
+
       if (stats.size > this.maxLogSize) {
         // Rotate logs
         for (let i = this.maxLogFiles - 1; i > 0; i--) {
           const oldFile = `${logFile}.${i}`;
           const newFile = `${logFile}.${i + 1}`;
-          
+
           try {
             await fs.rename(oldFile, newFile);
           } catch (error) {
             // File might not exist, continue
           }
         }
-        
+
         // Move current log to .1
         await fs.rename(logFile, `${logFile}.1`);
       }
@@ -207,7 +207,7 @@ class SecurityLogger {
     try {
       const data = await fs.readFile(this.securityLogFile, 'utf8');
       const lines = data.trim().split('\n').filter(line => line);
-      
+
       let events = lines
         .slice(-limit * 2) // Get more lines to account for filtering
         .map(line => {
@@ -239,7 +239,7 @@ class SecurityLogger {
   async getSecurityStats() {
     try {
       const events = await this.getRecentSecurityEvents(1000);
-      
+
       const stats = {
         totalEvents: events.length,
         severityBreakdown: {
@@ -254,11 +254,11 @@ class SecurityLogger {
 
       events.forEach(event => {
         // Count by severity
-        stats.severityBreakdown[event.severity] = 
+        stats.severityBreakdown[event.severity] =
           (stats.severityBreakdown[event.severity] || 0) + 1;
 
         // Count by event type
-        stats.eventTypes[event.event] = 
+        stats.eventTypes[event.event] =
           (stats.eventTypes[event.event] || 0) + 1;
       });
 

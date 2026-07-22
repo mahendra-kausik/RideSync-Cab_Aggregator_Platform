@@ -15,10 +15,12 @@ const { User, Ride } = require('../models');
  * @returns {boolean} - Whether user has access
  */
 function validateRideAccess(userId, userRole, ride) {
-  if (!ride) return false;
-  
+  if (!ride) {
+    return false;
+  }
+
   return (
-    ride.riderId.toString() === userId || 
+    ride.riderId.toString() === userId ||
     ride.driverId?.toString() === userId ||
     userRole === 'admin'
   );
@@ -98,7 +100,7 @@ function broadcastRideNotification(io, rideId, event, data) {
     ...data,
     timestamp: getTimestamp()
   };
-  
+
   io.to(roomName).emit(event, payload);
   logSocketEvent('BROADCAST', 'SYSTEM', 'SYSTEM', `${event} to room ${roomName}`);
 }
@@ -161,7 +163,7 @@ function broadcastRideStatus(io, rideId, status, updatedBy, userRole, location =
  */
 function notifyRoomJoin(socket, rideId, userId, userRole) {
   const roomName = createRoomName(rideId);
-  
+
   // Notify user of successful join
   socket.emit('ride:room-joined', {
     rideId,
@@ -190,7 +192,7 @@ function notifyRoomJoin(socket, rideId, userId, userRole) {
  */
 function notifyRoomLeave(socket, rideId, userId, userRole) {
   const roomName = createRoomName(rideId);
-  
+
   // Notify user of successful leave
   socket.emit('ride:room-left', {
     rideId,
