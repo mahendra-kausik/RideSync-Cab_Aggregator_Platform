@@ -136,3 +136,20 @@
 - **Tradeoffs / risks:** The frontend no longer enforces indent/comma-dangle consistency, or `no-explicit-any`/
   `no-console` — a real (not just cosmetic) relaxation of type-safety and logging signal. The 11
   `exhaustive-deps` warnings remain unresolved (tracked, not hidden) and worth a dedicated pass later.
+- **Follow-up (same session):** the first `--fix` pass on both frontend and backend converted some
+  double-quoted strings containing a literal apostrophe into single-quoted-with-escapes (e.g.
+  `"'self'"` → `'\'self\''` in CSP directives, `"You haven't..."` → `'You haven\'t...'`) — technically valid
+  per `quotes: single` but needlessly hard to read. Added `{ "avoidEscape": true }` to the `quotes` rule on
+  both `.eslintrc.json`s and reverted the handful of affected strings to their natural double-quoted form.
+  Also found the `curly`/`brace-style` fixer had left ~106 lines under-indented across 11 backend files
+  (same flush-left-body issue as frontend) — reindented by hand, same root cause as note above.
+- **Follow-up 2:** `Run backend tests` still failed in CI even after lint was fixed — the 2 pre-existing
+  `services-matching.test.js` failures (see this entry's Context) turned out to be a real, fixable test bug,
+  not just "pre-existing and out of scope": `__tests__/setup.js` globally sets `DISABLE_MATCHING=true` to stop
+  background matching side-effects in other tests, but the two failing tests specifically exercise
+  `findNearestDriver`'s real input-validation path — that same flag short-circuits the function before
+  validation ever runs, returning a response with no `error` field (the two tests assert `result.error` is
+  defined). Fixed by clearing `DISABLE_MATCHING` in a scoped `beforeEach`/`afterEach` around just that describe
+  block (a real MongoDB Memory Server is connected globally in `setup.js`, so once the flag is cleared the
+  function reaches `_validateCoordinates`, throws, and the catch block sets `error: 'MATCHING_SERVICE_ERROR'`
+  as expected). All 163 backend tests now pass.

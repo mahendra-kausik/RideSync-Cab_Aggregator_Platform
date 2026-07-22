@@ -25,9 +25,12 @@ setup (Render/Vercel/Atlas/Upstash/cron) still pending, needs the user.**
             `backend/server.js`) — will pick up the Vercel origin automatically once that env var is set on Render.
       - [x] Render deploy hook already wired in `.github/workflows/ci-cd.yml` (`curl ${{ secrets.RENDER_DEPLOY_HOOK }}`) — just needs the real secret value once the Render service exists.
       - [x] Fixed CI/CD `build` job (was failing on every run): pinned `typescript` via root-level npm
-            `overrides` (was floating to 7.0.2, incompatible with `@typescript-eslint@6.x`); relaxed
-            `frontend/.eslintrc.json` rules that never matched the codebase's actual (inconsistent) style;
-            cleaned up ~25 real mechanical lint violations. See P-001. Verified: lint/build/tests all green.
+            `overrides` (was floating to 7.0.2, incompatible with `@typescript-eslint@6.x`); relaxed both
+            `frontend/` and `backend/.eslintrc.json` rules that never matched the codebase's actual
+            (inconsistent) style; cleaned up real mechanical lint violations on both sides; fixed the 2
+            pre-existing `services-matching.test.js` failures (a real test/`DISABLE_MATCHING`-flag interaction
+            bug, not just pre-existing noise). See P-001. CI-CD now green end to end: frontend lint/build/audit,
+            backend lint/tests (163/163) all pass.
       - [ ] **Needs you:** create the hosted accounts (see checklist below), then hand me the connection strings /
             URLs so I can finish env wiring and run the Layer 1 gate.
       - [ ] cron-job.org keep-warm ping (needs the live Render URL first).

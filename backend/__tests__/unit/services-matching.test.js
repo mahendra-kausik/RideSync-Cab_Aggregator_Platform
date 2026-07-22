@@ -269,6 +269,17 @@ describe('MatchingService - Configuration Constants', () => {
 
 describe('MatchingService - Error Handling', () => {
     describe('findNearestDriver with invalid input', () => {
+        // These tests exercise the real coordinate-validation path, which the global
+        // DISABLE_MATCHING test-env flag (set in __tests__/setup.js) short-circuits
+        // before it's ever reached.
+        beforeEach(() => {
+            delete process.env.DISABLE_MATCHING;
+        });
+
+        afterEach(() => {
+            process.env.DISABLE_MATCHING = 'true';
+        });
+
         it('should handle invalid coordinates gracefully', async () => {
             const result = await MatchingService.findNearestDriver(200, 100, 'ride123');
 
