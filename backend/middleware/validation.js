@@ -235,7 +235,7 @@ const createRateLimiter = (windowMs, max, message, skipSuccessfulRequests = fals
     standardHeaders: true,
     legacyHeaders: false,
     skipSuccessfulRequests,
-    handler: (req, res) => {
+    handler: (_req, _res) => {
       throw new AppError(message, 429, 'RATE_LIMIT_EXCEEDED');
     }
   });

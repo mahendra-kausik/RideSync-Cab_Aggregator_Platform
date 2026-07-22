@@ -14,7 +14,6 @@
  */
 
 const AuthUtils = require('../../utils/auth');
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 // Mock environment variables

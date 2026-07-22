@@ -389,7 +389,7 @@ class SocketService {
       socket.emit('driver:availability-updated', availabilityData);
 
       // Emit driver status change to all admins
-      for (const [adminUserId, socketId] of this.connectedUsers.entries()) {
+      for (const socketId of this.connectedUsers.values()) {
         const socketInfo = this.userSockets.get(socketId);
         if (socketInfo && socketInfo.userRole === 'admin') {
           this.io.to(socketId).emit('driver:status-change', availabilityData);
@@ -469,7 +469,7 @@ class SocketService {
       this.io.to(`ride:${rideId}`).emit(event, data);
 
       // Also emit to all connected admin users for dashboard monitoring
-      for (const [userId, socketId] of this.connectedUsers.entries()) {
+      for (const socketId of this.connectedUsers.values()) {
         const socketInfo = this.userSockets.get(socketId);
         if (socketInfo && socketInfo.userRole === 'admin') {
           this.io.to(socketId).emit(event, data);

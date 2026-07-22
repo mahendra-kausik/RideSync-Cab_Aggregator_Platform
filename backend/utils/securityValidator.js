@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 const securityConfig = require('../config/security');
 
 /**

@@ -1,7 +1,5 @@
 const request = require('supertest');
 const createTestApp = require('../helpers/testApp');
-const { User } = require('../../models');
-
 describe('Rides API (Integration)', () => {
     let app;
 

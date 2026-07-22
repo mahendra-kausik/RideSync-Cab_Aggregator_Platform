@@ -4,7 +4,6 @@
  */
 
 const mongoose = require('mongoose');
-const { User, Ride, OTP } = require('../../models');
 
 /**
  * Database utilities

@@ -377,7 +377,6 @@ class RideController {
    */
   static async getPendingRides(req, res) {
     try {
-      const driverId = req.user._id;
       const { lat, lng, radius = 10 } = req.query;
 
       // Validate driver location if provided

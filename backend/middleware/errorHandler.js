@@ -200,7 +200,7 @@ const handleSpecificErrors = (error) => {
 /**
  * Main error handling middleware
  */
-const globalErrorHandler = (error, req, res, next) => {
+const globalErrorHandler = (error, req, res, _next) => {
   // Log the error
   ErrorLogger.logError(error, req);
 
@@ -242,7 +242,7 @@ class AppError extends Error {
  * Handle unhandled promise rejections
  */
 const handleUnhandledRejection = () => {
-  process.on('unhandledRejection', (reason, promise) => {
+  process.on('unhandledRejection', (reason, _promise) => {
     console.error('🚨 Unhandled Promise Rejection:', reason);
     ErrorLogger.logError(new Error(`Unhandled Promise Rejection: ${reason}`));
 

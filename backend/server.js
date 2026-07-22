@@ -6,8 +6,6 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
 const { Server } = require('socket.io');
 
 // Import database connection
@@ -24,7 +22,6 @@ const {
   handleUncaughtException
 } = require('./middleware/errorHandler');
 
-const { generalApiRateLimiter } = require('./middleware/validation');
 const gracefulDegradation = require('./services/GracefulDegradationService');
 const { requestLogger, errorRequestLogger } = require('./middleware/requestLogger');
 
@@ -60,7 +57,6 @@ const {
   comprehensiveSecurityHeaders,
   advancedInputValidation,
   tokenRotationMiddleware,
-  sessionHijackingDetection,
   apiAbuseDetection
 } = require('./middleware/advancedSecurity');
 
@@ -258,7 +254,7 @@ async function startServer() {
     // Validate security configuration
     const SecurityValidator = require('./utils/securityValidator');
     const securityValidator = new SecurityValidator();
-    const validationResults = securityValidator.validateAll();
+    securityValidator.validateAll();
     securityValidator.printResults();
 
     // Exit if critical security issues in production

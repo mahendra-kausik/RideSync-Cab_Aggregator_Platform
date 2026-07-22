@@ -31,21 +31,21 @@ if (process.env.NODE_ENV === 'development') {
   /**
    * Test async error
    */
-  router.get('/async-error', asyncHandler(async (req, res) => {
+  router.get('/async-error', asyncHandler(async (_req, _res) => {
     throw new Error('This is a test async error');
   }));
 
   /**
    * Test custom app error
    */
-  router.get('/app-error', asyncHandler(async (req, res) => {
+  router.get('/app-error', asyncHandler(async (_req, _res) => {
     throw new AppError('This is a test app error', 400, 'TEST_ERROR');
   }));
 
   /**
    * Test database error simulation
    */
-  router.get('/db-error', asyncHandler(async (req, res) => {
+  router.get('/db-error', asyncHandler(async (_req, _res) => {
     const error = new Error('Connection timeout');
     error.name = 'MongoNetworkError';
     throw error;

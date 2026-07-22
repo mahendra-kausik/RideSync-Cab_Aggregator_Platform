@@ -298,7 +298,6 @@ class SessionManager {
     }
 
     // Clear old blacklisted tokens (keep for 7 days)
-    const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
     // Note: In production, implement proper cleanup with timestamps
     if (this.blacklistedTokens.size > 10000) {
       this.blacklistedTokens.clear(); // Simple cleanup for demo

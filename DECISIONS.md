@@ -217,3 +217,25 @@
   create a real account (arguably a better end-to-end smoke test).
 - **Tradeoffs / risks (if applicable):** None yet — no fix applied pending the user's choice of which path to
   take.
+
+## D-007 — Backend lint cleanup: zero-warning gate + admin ride search
+- **Date / Layer:** 2026-07-22 / Pre-Layer-2 cleanup
+- **Context:** User asked for a full pass on backend code quality (unused vars, dead code, wrong logic)
+  before starting Layer 2. `eslint . --ext .js --max-warnings=40` was already passing with 0 errors, but
+  carried 36 `no-unused-vars` warnings papered over by the generous `--max-warnings=40` gate. Auditing them
+  individually surfaced two that were real behavior gaps, not just dead code: admin `GET /api/rides` accepted
+  a `search` query param that was silently dropped, and `server.js` imported the `sessionHijackingDetection`
+  middleware without ever `app.use()`-ing it.
+- **Decision:** (1) Removed all 34 pure dead imports/locals/unused args (prefixed intentionally-unused
+  handler args with `_` per the existing `argsIgnorePattern: ^_` rule). (2) Implemented the admin ride
+  `search` param as a case-insensitive, regex-escaped match against `pickup.address` / `destination.address`.
+  (3) Left `sessionHijackingDetection` unwired — stripped the dead import rather than activating new
+  security-middleware behavior outside the scope of a lint cleanup. (4) Tightened `package.json`'s lint
+  script from `--max-warnings=40` to `--max-warnings=0` so new dead code fails CI immediately.
+- **Why:** A 40-warning budget let real gaps (like the dropped `search` param) hide next to harmless dead
+  imports. Zero-warning is the honest bar for a portfolio project that must be defensible under review.
+  Activating unused security middleware is a behavior change with false-positive-logout risk and deserves
+  its own reviewed change, not a silent side effect of cleanup.
+- **Alternatives considered:** Leaving `--max-warnings=40` (rejected — masks future regressions); wiring up
+  `sessionHijackingDetection` now (rejected by user — separate, riskier change).
+- **Tradeoffs / risks:** None expected — all 7 backend test suites (163 tests) still pass; lint is 0/0.

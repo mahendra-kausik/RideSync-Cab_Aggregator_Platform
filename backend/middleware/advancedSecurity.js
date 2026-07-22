@@ -1,4 +1,3 @@
-const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const { AppError } = require('./errorHandler');
 const securityConfig = require('../config/security');

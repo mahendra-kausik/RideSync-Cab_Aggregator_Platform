@@ -71,6 +71,15 @@ clean end-to-end.
 - Layer 1 hosting free-tier limits confirmed live in practice (Render cold-start behavior, Atlas M0, Upstash
   free tier) — no surprises hit so far.
 
+## Pre-Layer-2 cleanup (2026-07-22)
+- Backend lint: 0 errors / 0 warnings (was 0/36 under a `--max-warnings=40` gate). Removed all dead
+  imports/locals, prefixed intentionally-unused handler args with `_`. Gate tightened to `--max-warnings=0`.
+- Fixed a real gap found via the unused-var audit: admin `GET /api/rides?search=` now actually filters by
+  `pickup.address`/`destination.address` (regex-escaped, case-insensitive) — previously silently ignored.
+- `sessionHijackingDetection` middleware import removed from `server.js` (was dead-imported, never wired);
+  left un-activated by design — see D-007.
+- Verified: `npm run lint` clean, `npm test` → 7 suites / 163 tests passing, no regressions.
+
 ## Decisions log (one-line index — full entries in `DECISIONS.md`)
 - D-001 — Hosting = Render + Vercel + Atlas M0 + Upstash Redis (free, no card, native WebSocket).
 - D-002 — Redis for shared state (sessions + rate limit + sockets) with in-memory fallback.
@@ -80,6 +89,7 @@ clean end-to-end.
 - D-006 — GCP Cloud Run considered and rejected for the 3-4 month placement-season lifespan; stayed on Render free.
 - P-001 — CI/CD build job fixes (typescript pin, eslint config, Mongo test wiring).
 - P-002 — Demo-account login 401 on fresh Atlas deploy (seed data never migrated).
+- D-007 — Backend lint cleanup: zero-warning gate + implemented admin ride search.
 
 ## How to resume
 1. Read this file, then `CLAUDE.md`, then the relevant section of `PROJECT_PLAN.md`.

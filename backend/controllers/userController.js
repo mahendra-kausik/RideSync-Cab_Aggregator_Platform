@@ -972,6 +972,14 @@ class UserController {
           filter.createdAt.$lte = new Date(endDate);
         }
       }
+      if (search) {
+        // Escape regex metacharacters in user input before building the pattern
+        const rx = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        filter.$or = [
+          { 'pickup.address': rx },
+          { 'destination.address': rx }
+        ];
+      }
 
       const rides = await Ride.find(filter)
         .populate('riderId', 'profile.name phone role')

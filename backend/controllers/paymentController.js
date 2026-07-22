@@ -483,7 +483,7 @@ class PaymentController {
   /**
    * Process cash payment
    */
-  static async processCashPayment(ride) {
+  static async processCashPayment(_ride) {
     return {
       success: true,
       transactionId: `cash_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -534,7 +534,7 @@ class PaymentController {
   /**
    * Update user's average rating
    */
-  static async updateUserRating(userId, newRating) {
+  static async updateUserRating(userId, _newRating) {
     try {
       // Get all completed rides for the user
       const userRides = await Ride.find({

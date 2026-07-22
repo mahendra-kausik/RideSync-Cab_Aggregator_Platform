@@ -5,8 +5,6 @@
  * Requirements: 3.3, 4.1, 4.2
  */
 
-const { User, Ride } = require('../models');
-
 /**
  * Utility function to validate ride access
  * @param {string} userId - User ID

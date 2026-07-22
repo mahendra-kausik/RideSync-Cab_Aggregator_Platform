@@ -101,7 +101,7 @@ const createAdvancedRateLimiter = (options) => {
       // Skip rate limiting for health checks
       return req.path === '/health';
     }),
-    handler: (req, res) => {
+    handler: (req, _res) => {
       // Log rate limit violations for security monitoring
       console.warn(`Rate limit exceeded for ${req.ip} on ${req.method} ${req.path}`, {
         ip: req.ip,

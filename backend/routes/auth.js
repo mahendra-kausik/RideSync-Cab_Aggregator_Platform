@@ -10,8 +10,7 @@ const {
 
 const {
   strictAuthRateLimiter,
-  otpRequestRateLimiter,
-  tokenRotation
+  otpRequestRateLimiter
 } = require('../middleware/security');
 
 const router = express.Router();

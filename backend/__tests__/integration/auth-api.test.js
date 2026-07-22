@@ -1,6 +1,6 @@
 ﻿const request = require('supertest');
 const createTestApp = require('../helpers/testApp');
-const { User, OTP } = require('../../models');
+const { OTP } = require('../../models');
 
 // Single clean auth integration suite (removed duplicated legacy suites)
 describe('Authentication API (Integration)', () => {
@@ -51,7 +51,7 @@ describe('Authentication API (Integration)', () => {
     describe('POST /api/auth/login-phone', () => {
         it('logs in existing rider with valid credentials', async () => {
             // createTestUser will hash the password via pre-save hook, so pass plaintext
-            const rider = await global.testUtils.createTestUser({
+            await global.testUtils.createTestUser({
                 phone: '+15550000005',
                 password: 'RiderPass!1',  // Pass plaintext, not hashed
                 role: 'rider',
