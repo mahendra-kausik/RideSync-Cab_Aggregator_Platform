@@ -4,6 +4,7 @@
  */
 
 const logger = require('../utils/logger');
+const requestContext = require('../utils/requestContext');
 
 /**
  * Request logging middleware
@@ -11,10 +12,12 @@ const logger = require('../utils/logger');
 const requestLogger = (req, res, next) => {
   const startTime = Date.now();
 
-  // Generate unique request ID if not present
-  if (!req.get('X-Request-ID')) {
-    req.headers['x-request-id'] = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
+  // Generate unique request ID if not present, and echo it back so a client
+  // (or a chain of internal services) can correlate their own logs too.
+  const requestId = req.get('X-Request-ID') ||
+    `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  req.headers['x-request-id'] = requestId;
+  res.set('X-Request-ID', requestId);
 
   // Log request start in development
   if (process.env.NODE_ENV === 'development') {
@@ -47,7 +50,10 @@ const requestLogger = (req, res, next) => {
   // Security monitoring
   monitorSecurityEvents(req);
 
-  next();
+  // Everything downstream (route handlers, awaited DB calls, etc.) runs
+  // inside this async context, so every log line they emit picks up the
+  // same requestId automatically — see utils/requestContext.js.
+  requestContext.run(requestId, next);
 };
 
 /**

@@ -1,5 +1,6 @@
 const { User, Ride } = require('../models');
 const mongoose = require('mongoose');
+const { rideMatchDuration } = require('../config/metrics');
 
 /**
  * Driver Matching Service
@@ -34,6 +35,15 @@ class MatchingService {
      * @returns {Promise<Object>} Driver match result with driver info and metadata
      */
     static async findNearestDriver(pickupLongitude, pickupLatitude, rideId, initialRadius = this.INITIAL_RADIUS) {
+        const start = process.hrtime.bigint();
+        try {
+            return await this._findNearestDriver(pickupLongitude, pickupLatitude, rideId, initialRadius);
+        } finally {
+            rideMatchDuration.observe(Number(process.hrtime.bigint() - start) / 1e9);
+        }
+    }
+
+    static async _findNearestDriver(pickupLongitude, pickupLatitude, rideId, initialRadius = this.INITIAL_RADIUS) {
         try {
             // Skip matching in test environment to prevent background async tasks
             if (process.env.DISABLE_MATCHING === 'true') {

@@ -5,6 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const requestContext = require('./requestContext');
 
 /**
  * Log levels
@@ -50,6 +51,7 @@ class Logger {
       timestamp: new Date().toISOString(),
       level,
       message,
+      requestId: requestContext.getRequestId() || null,
       metadata,
       pid: process.pid,
       environment: process.env.NODE_ENV || 'development'

@@ -535,3 +535,45 @@
   config (commit SHA, Node/k6 versions, host specs) per `CLAUDE.md`'s reproducible-measurement rule.
 - **Tradeoffs / risks:** Numbers are from a single run on one dev machine, not a sustained/repeated
   benchmark — acceptable for a portfolio metric, not a capacity-planning SLA.
+
+---
+
+## D-014 — Layer 4: `prom-client` metrics + `AsyncLocalStorage`-based correlation IDs
+- **Date / Layer:** 2026-07-24 / Layer 4
+- **Context:** Needed `/metrics` in Prometheus format (default process metrics + HTTP duration + ride-match
+  duration + circuit-breaker state) and a correlation ID traceable across log lines for a single request,
+  per `PROJECT_PLAN.md` §4 Layer 4.
+- **Decision:** Added `prom-client` with one `Registry` in `backend/config/metrics.js`:
+  `client.collectDefaultMetrics()` (process/event-loop/GC metrics for free) plus three custom metrics —
+  `http_request_duration_seconds` (histogram, labels `method`/`route`/`status_code`, recorded by
+  `backend/middleware/metrics.js` on `res.on('finish')`), `ride_match_duration_seconds` (histogram, wraps
+  `MatchingService.findNearestDriver` — renamed the original implementation to `_findNearestDriver` and
+  made `findNearestDriver` a thin timing wrapper so every return path is covered by one `finally` block
+  without touching the function's internal early-returns), and `circuit_breaker_state` (gauge, labels
+  `service`, pull-based via a custom `collect()` that reads `GracefulDegradationService.getHealthStatus()`
+  on every scrape instead of pushing on each state transition — one less thing the breaker needs to know
+  about). `GET /metrics` is mounted outside `/api`, so it isn't subject to `apiRateLimiter`/
+  `apiAbuseDetection` (same reasoning as `/health`).
+  For correlation IDs: `backend/utils/requestContext.js` wraps Node's built-in `AsyncLocalStorage` (no new
+  dependency) around the request ID `requestLogger.js` already generated (now also echoed back as an
+  `X-Request-ID` response header). `logger.js`'s `formatLogEntry` reads the current request ID from that
+  store and stamps it onto every log line automatically — no call site (~30+ `logger.info/warn/error` calls
+  across controllers/services) had to be touched, and it survives `await`s because `AsyncLocalStorage`
+  propagates through the async continuation chain, not just synchronous calls.
+- **Why:** `prom-client` + Grafana is the standard, boring choice for Node metrics (explicitly named in
+  `PROJECT_PLAN.md`). `AsyncLocalStorage` is stdlib and threads the ID through automatically; the
+  alternative (pass `requestId` as an explicit param into every logger call across the existing codebase)
+  is a much larger, riskier diff for the same outcome.
+- **Alternatives considered:** Manually threading `req.id` through every function signature that logs —
+  rejected as a large mechanical diff touching many files for no behavioral gain over `AsyncLocalStorage`.
+  Pushing circuit-breaker state on every transition (an event emitter into the gauge) — rejected; polling
+  the existing `getHealthStatus()` on scrape is simpler and `/metrics` is pulled roughly every 15-60s, not a
+  latency-sensitive path.
+- **Tradeoffs / risks:** `route` label uses `req.route.path` (falls back to `req.baseUrl` for 404s/
+  unmatched routes) specifically to keep cardinality bounded — raw `req.url` would blow up the metric with
+  one series per dynamic ID. `AsyncLocalStorage` has a small per-request overhead (a few microseconds); not
+  measurable against this app's existing request-time budget.
+- **Verification:** Smoke-tested `/metrics` output format via `supertest` (Prometheus text format, all three
+  custom metrics present) and correlation-ID propagation across an `await` via a standalone script
+  (`requestId` appeared in the resulting JSON log line with zero changes to the `logger.info` call site).
+  `npm run lint` 0/0, `npm test` 164/164 — no regressions.

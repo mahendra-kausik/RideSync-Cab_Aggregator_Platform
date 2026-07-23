@@ -25,6 +25,8 @@ const {
 
 const gracefulDegradation = require('./services/GracefulDegradationService');
 const { requestLogger, errorRequestLogger } = require('./middleware/requestLogger');
+const metricsMiddleware = require('./middleware/metrics');
+const { register: metricsRegister } = require('./config/metrics');
 
 const app = express();
 const server = http.createServer(app);
@@ -134,6 +136,15 @@ app.use(tokenRotationMiddleware);
 
 // Request logging middleware
 app.use(requestLogger);
+
+// Prometheus metrics middleware (records request duration per route)
+app.use(metricsMiddleware);
+
+// Prometheus scrape endpoint — not under /api, so it isn't rate-limited
+app.get('/metrics', asyncHandler(async (req, res) => {
+  res.set('Content-Type', metricsRegister.contentType);
+  res.end(await metricsRegister.metrics());
+}));
 
 // Health check endpoint with enhanced monitoring
 app.get('/health', asyncHandler(async (req, res) => {

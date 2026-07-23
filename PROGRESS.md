@@ -22,6 +22,13 @@ changes. Results: `/health` sustained 100 req/s at p95=3.72ms (0% errors); 200/2
 connections held stable for 20s; circuit breaker CLOSED→OPEN captured cleanly (OPEN→HALF_OPEN not externally
 observable — documented limitation, see D-013). Along the way, discovered a rate-limit gate the earlier
 research pass missed — see D-012.
+
+**Layer 4 shipped — code + local gate passed; Grafana Cloud dashboard wiring left as a manual follow-up.**
+`prom-client` `/metrics` (default process metrics + `http_request_duration_seconds` +
+`ride_match_duration_seconds` + `circuit_breaker_state` gauge). Correlation IDs threaded through
+`logger.js` via `AsyncLocalStorage` (`backend/utils/requestContext.js`) — every log line in a request now
+carries the same `requestId` automatically, and it's echoed back as an `X-Request-ID` response header. See
+D-014. Lint 0/0, tests 164/164, no regressions.
 - **Baseline being upgraded:** working MERN cab-aggregator, 578 backend tests (~72% coverage), real-time
   Socket.IO, geospatial matching, AES-256-GCM PII encryption, circuit-breaker graceful degradation.
 
@@ -86,7 +93,21 @@ research pass missed — see D-012.
       - [x] `load/README.md`: results table + reproduction config + honesty-guardrails limitations section.
       - [x] Zero backend runtime code changes.
       - [x] **Gate passed** — see D-013 for full results.
-- [ ] Layer 4 — Observability (prom-client /metrics + Grafana Cloud + correlation IDs).
+- [x] **Layer 4 — Observability (prom-client /metrics + Grafana Cloud + correlation IDs).**
+      - [x] `backend/config/metrics.js`: one `prom-client` `Registry`, default metrics +
+            `http_request_duration_seconds` (histogram) + `ride_match_duration_seconds` (histogram) +
+            `circuit_breaker_state` (gauge, pull-based off `GracefulDegradationService`).
+      - [x] `backend/middleware/metrics.js` records HTTP duration on `res.on('finish')`; `GET /metrics`
+            mounted in `server.js` outside `/api` (not rate-limited, same as `/health`).
+      - [x] `MatchingService.findNearestDriver` wrapped (internal renamed to `_findNearestDriver`) to time
+            every call in a `finally` block, covering all existing early-return paths untouched.
+      - [x] `backend/utils/requestContext.js`: `AsyncLocalStorage`-based correlation ID; `logger.js` stamps
+            it onto every log line automatically; `requestLogger.js` echoes it as `X-Request-ID`.
+      - [x] `npm run lint` 0/0; `npm test` 164/164 — no regressions.
+      - [x] Local gate: smoke-tested `/metrics` (Prometheus format, all 3 custom metrics present via
+            `supertest`) and correlation-ID propagation across an `await` (verified via standalone script).
+      - [ ] **Open (manual, not code):** Grafana Cloud account/dashboard wiring — needs a live Render URL
+            scrape target and a Grafana Cloud signup; not blocking, do before Layer 5's README screenshots.
 - [ ] Layer 5 — README-as-paper & resume bullets.
 
 ## Deployed system — quick reference (fill in as layers ship)
@@ -164,8 +185,10 @@ research pass missed — see D-012.
 - D-012 — Layer 3 REST load test targets `/health` for throughput; `/api/rides/estimate` capped, not ramped,
   due to a global `apiRateLimiter` + `apiAbuseDetection` gate on all `/api/*` routes the earlier plan missed.
 - D-013 — Layer 3 acceptance gate results (REST/WS/circuit-breaker numbers).
+- D-014 — Layer 4: prom-client `/metrics` (default + 3 custom metrics) + AsyncLocalStorage correlation IDs.
 
 ## How to resume
 1. Read this file, then `CLAUDE.md`, then the relevant section of `PROJECT_PLAN.md`.
-2. Continue from the active layer (currently **Layer 4 — Observability**, pending approval). Build only that
-   layer, run its gate, update this file + `DECISIONS.md`, then STOP and ask for approval before the next layer.
+2. Continue from the active layer (currently **Layer 5 — README-as-paper & defense**, pending approval).
+   Build only that layer, run its gate, update this file + `DECISIONS.md`, then STOP and ask for approval
+   before the next layer.
