@@ -480,3 +480,10 @@
   clients) — ioredis's documented setting for exactly this case: commands wait for reconnection instead of
   throwing after N tries. Offline command queueing (`enableOfflineQueue`, default `true`) already buffers
   requests during the gap, so this only removes an artificial timeout, not correctness.
+- **Observed post-fix:** deploy is stable (service live, health checks pass, no crash), but logs show
+  continuous `ECONNRESET`/reconnect cycling on all 3 connections while idle — Upstash's free-tier proxy
+  closes idle TCP connections after a few seconds; ioredis's default `retryStrategy` reconnects
+  automatically, exactly as designed. Confirmed harmless (no request failures) and left as-is rather than
+  adding TCP keepalive, since the reconnect behavior is expected for Upstash's serverless tier and "fixing"
+  it further wasn't shown to solve a real problem. Worth a quick check of Upstash's dashboard command-quota
+  usage if this project ever runs near the free-tier daily command limit.
