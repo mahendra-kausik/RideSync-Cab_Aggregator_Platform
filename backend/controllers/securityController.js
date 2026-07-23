@@ -14,7 +14,7 @@ const { User } = require('../models');
  */
 const getSecurityDashboard = asyncHandler(async (req, res) => {
   const securityStats = await securityLogger.getSecurityStats();
-  const sessionStats = sessionManager.getStats();
+  const sessionStats = await sessionManager.getStats();
 
   // Get user security metrics
   const userStats = await User.aggregate([

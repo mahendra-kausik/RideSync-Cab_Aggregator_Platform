@@ -356,3 +356,98 @@
 - **Tradeoffs / risks:** None found. Verified live: fresh `docker-compose up -d --build` seeded all 3 accounts
   on first boot, a subsequent restart logged no re-seed/duplicate-key activity, and all three demo accounts
   (`admin@cabaggreg.local` / `+1234567890` / `+1234567892`) successfully logged in via the running API.
+
+## D-010 — Redis shared-state layer: ioredis + Redis-backed sessionManager/rate-limiter/Socket.IO adapter
+- **Date / Layer:** 2026-07-23 / Layer 2
+- **Context:** Layer 2 needs sessions, rate limiting, and Socket.IO to share state across instances via Redis,
+  with an in-memory fallback so local dev without `REDIS_URL` keeps working (D-002/D-003 set this direction;
+  this entry records the concrete implementation).
+- **Decision:** Added `ioredis`, `@socket.io/redis-adapter`, `rate-limit-redis`; removed the previously
+  installed-but-unused `redis` v4 package. One shared client in `backend/config/redis.js`, exporting `null`
+  when `REDIS_URL` is unset. `sessionManager` (`backend/utils/sessionManager.js`) now branches on
+  `this.redis` inside small storage-helper methods (`_putSession`, `_getSession`, `_blacklist`, etc.) — same
+  public interface (`createSession`, `validateSession`, `invalidateSession`, ...), Redis-backed when
+  configured, identical in-memory Map/Set behavior otherwise. Sessions store as `sess:<id>` (JSON, TTL =
+  24h sliding), per-user session ids in a `sess:user:<userId>` Set, blacklisted token hashes as `bl:<hash>`
+  (TTL 7d, matching the longest-lived refresh token, so blacklist entries expire on their own — no manual
+  cleanup needed under Redis). Rate limiter (`middleware/security.js`) swaps in `rate-limit-redis`'s
+  `RedisStore` when the shared client exists. Socket.IO (`server.js`) attaches
+  `@socket.io/redis-adapter`'s `createAdapter` over two duplicated connections when Redis is configured.
+- **Why:** ioredis over `node-redis` v4 (the already-installed-but-unused dep) because it has first-class
+  TCP support that `@socket.io/redis-adapter` and `rate-limit-redis` are built against, and a cleaner
+  pub/sub duplication API (`.duplicate()`) for the Socket.IO adapter's required separate pub/sub clients.
+- **Alternatives considered:** Kept `node-redis` v4 — works too, but `@socket.io/redis-adapter`'s docs and
+  most real-world examples assume ioredis, and it was already dead weight (grep-verified zero requires of
+  `'redis'` anywhere in the codebase before this change).
+- **Tradeoffs / risks:** `getStats()` counts active sessions/blacklisted tokens via Redis `SCAN` (not O(1));
+  fine for a low-traffic admin stats endpoint, called out with a `ponytail:` comment as the ceiling if this
+  ever needs to scale. `sessionManager`'s previously-sync methods (`getStats`, `invalidateSession`,
+  `invalidateUserSessions`, `getUserSessions`) are now `async` — updated all 5 call sites (all already inside
+  `asyncHandler`-wrapped routes) to `await` them; one dead/unwired caller in `advancedSecurity.js`'s
+  `sessionHijackingDetection` (see D-007 — never mounted in `server.js`) was left as an unawaited fire-and-
+  forget call since it's unreachable code, not worth touching.
+- **Verified:** `npm run lint` (0/0) and `npm test` (164/164, 163 existing + 1 new
+  `sessionManager-redis.test.js` unit test exercising the Redis-backed path against a mocked in-memory fake
+  client) both pass. Upstash's free-tier TCP/`ioredis` access (open item since D-001/Layer 1) is **confirmed**:
+  the Upstash console's "Connect" panel has a dedicated TCP tab issuing a `REDIS_URL=rediss://...:6379`
+  connection string, plus a first-class `ioredis` code-sample tab — resolves the last open free-tier
+  question. **Update:** the full gate has since run and passed — see P-004 and D-011 below for the two
+  concurrency bugs it caught and fixed along the way.
+
+## P-004 — Layer 2 gate caught a real demo-seed race between concurrently-booting instances
+- **Date / Layer:** 2026-07-23 / Layer 2
+- **Context:** Running the Layer 2 acceptance gate (two `node server.js` processes started back-to-back
+  against the same Upstash Redis + Atlas Mongo) crashed instance B's boot with
+  `E11000 duplicate key error ... email_hash_1`. `scripts/seed.js`'s `ensureDemoAccounts()` (made idempotent
+  in P-003) does a find-then-insert per demo account; that's idempotent for *sequential* boots but not
+  atomic across two processes booting within milliseconds of each other — both saw "account doesn't exist
+  yet" and both tried to insert, so the loser's insert threw and (uncaught) crashed the whole instance.
+  This exact failure mode is only reachable with more than one instance starting concurrently — Layer 1
+  never exercised it.
+- **Action:** Wrapped the `user.save()` in `ensureDemoAccounts()` in a try/catch; a duplicate-key error
+  (`error.code === 11000`) is now treated as "another instance already created this account" and swallowed,
+  not rethrown. Any other error still propagates and still fails startup as before.
+- **Why:** The desired end state (exactly one of each demo account) was still reached — the loser process
+  just needs to not treat "I lost a race to an idempotent operation" as fatal.
+- **Tradeoffs / risks:** None found — verified live: both instances now boot cleanly when started
+  concurrently against the same database, `npm run lint` (0/0) and `npm test` (164/164) unaffected.
+
+## D-011 — Fixed a rate-limiter key collision exposed by moving to a shared Redis store
+- **Date / Layer:** 2026-07-23 / Layer 2
+- **Context:** After D-010 wired `rate-limit-redis` into `middleware/security.js`'s
+  `createAdvancedRateLimiter`, running two real instances against real login traffic during the Layer 2
+  gate produced `ValidationError: ERR_ERL_DOUBLE_COUNT` from `express-rate-limit` on `POST
+  /api/auth/login-phone`. Root cause: `apiRateLimiter` (mounted on all of `/api`) and `strictAuthRateLimiter`
+  (mounted on auth routes) both use the same default `keyGenerator` (`${req.ip}-${req.get('User-Agent')}`)
+  and, after D-010, both used the same Redis key prefix (`'rl:'`) — so two independent limiters were
+  silently incrementing the exact same Redis key for the same request. This was invisible before D-10
+  because express-rate-limit's default `MemoryStore` is a fresh, private `Map` per `rateLimit()` call —
+  switching to one shared Redis keyspace removed that free, implicit per-instance isolation.
+- **Decision:** `createAdvancedRateLimiter` now takes an explicit `name` as its first argument, and its
+  Redis-backed store uses `prefix: \`rl:${name}:\`` — each of the 4 limiters (`auth`, `otp`, `api`,
+  `ride-booking`) gets its own Redis keyspace, restoring the isolation the in-memory store gave for free.
+- **Why:** Cheapest fix that addresses the actual root cause (shared keyspace across independently-intended
+  limiters), rather than e.g. forcing every limiter to have a distinct `keyGenerator` (which doesn't fix the
+  general case of two limiters ever sharing a key by coincidence).
+- **Tradeoffs / risks:** None found — verified live: re-ran the Layer 2 gate after this fix and the
+  double-count error no longer appears; both login requests succeed cleanly against two concurrent
+  instances sharing the same Redis.
+
+## Layer 2 gate — PASSED (two local instances vs. real Upstash Redis + Atlas Mongo)
+- **Date / Layer:** 2026-07-23 / Layer 2
+- **Setup:** Two `node server.js` processes (`PORT=5000`/`5001`), same `REDIS_URL` (Upstash) and `MONGO_URI`
+  (Atlas) as every other environment variable — i.e. the real free-tier services, not local Docker.
+- **Result 1 — cross-instance Socket.IO delivery:** rider socket connected to instance A, driver socket
+  connected to instance B, both joined the same `ride:<id>` room. Driver (on B) emitted
+  `ride:status-update`; rider (on A) received the resulting `ride:status-updated` broadcast — proving
+  `@socket.io/redis-adapter` correctly relays room broadcasts across two separate Socket.IO server
+  processes via Redis pub/sub.
+- **Result 2 — session survives an instance restart:** rider logged in against instance A (JWT + session
+  issued), instance A was killed and a fresh `node server.js` process started in its place on the same
+  port, and the pre-restart access token still passed `GET /api/auth/verify` against the new process —
+  proving `sessionManager` sessions live in Redis, not the killed process's in-memory `Map`.
+- **Bugs found and fixed along the way:** P-004 (seed race) and D-011 (rate-limiter key collision) — both
+  concurrency bugs invisible with a single instance, both real, both root-caused (not just retried away).
+- **Verification artifact:** ad-hoc Node script (not committed — one-off verification, not a repo
+  deliverable), spawns the two instances, logs in the seeded demo rider/driver, creates a throwaway ride
+  directly via the `Ride` model, runs both checks, and cleans up (kills both processes, deletes the ride).

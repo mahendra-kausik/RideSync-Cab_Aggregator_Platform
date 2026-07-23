@@ -10,6 +10,7 @@ const { Server } = require('socket.io');
 
 // Import database connection
 const dbConnection = require('./config/database');
+const redisClient = require('./config/redis');
 
 // Import models for testing
 const { User, Ride, OTP } = require('./models');
@@ -38,6 +39,16 @@ const io = new Server(server, {
   },
   transports: ['websocket', 'polling']
 });
+
+// Cross-instance Socket.IO delivery when Redis is configured — a ride update
+// emitted on one process reaches clients connected to another. Single-process
+// dev/test setups just skip this and Socket.IO uses its built-in in-memory adapter.
+if (redisClient) {
+  const { createAdapter } = require('@socket.io/redis-adapter');
+  const pubClient = redisClient.duplicate();
+  const subClient = redisClient.duplicate();
+  io.adapter(createAdapter(pubClient, subClient));
+}
 
 // Enhanced security middleware
 const {

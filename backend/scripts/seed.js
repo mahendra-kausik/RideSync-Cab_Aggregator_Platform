@@ -70,8 +70,17 @@ async function ensureDemoAccounts() {
     }
 
     const user = new User(userData);
-    await user.save();
-    console.log(`✅ Seeded demo ${user.role}: ${userData.profile.name} (${userData.email || userData.phone})`);
+    try {
+      await user.save();
+      console.log(`✅ Seeded demo ${user.role}: ${userData.profile.name} (${userData.email || userData.phone})`);
+    } catch (error) {
+      // Another instance's concurrent boot won the race and inserted this account first
+      // (the find-then-save check above isn't atomic across processes) — end state is
+      // still "account exists", so this isn't a real failure.
+      if (error.code !== 11000) {
+throw error;
+}
+    }
   }
 }
 

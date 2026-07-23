@@ -49,7 +49,7 @@ router.get('/stats',
   requireAdmin,
   asyncHandler(async (req, res) => {
     const securityStats = await securityLogger.getSecurityStats();
-    const sessionStats = sessionManager.getStats();
+    const sessionStats = await sessionManager.getStats();
 
     res.json({
       success: true,
@@ -84,7 +84,7 @@ router.get('/sessions',
   asyncHandler(async (req, res) => {
     // Note: This would need to be implemented in sessionManager
     // For now, return session statistics
-    const stats = sessionManager.getStats();
+    const stats = await sessionManager.getStats();
 
     res.json({
       success: true,
@@ -109,7 +109,7 @@ router.post('/sessions/:sessionId/invalidate',
   asyncHandler(async (req, res) => {
     const { sessionId } = req.params;
 
-    sessionManager.invalidateSession(sessionId);
+    await sessionManager.invalidateSession(sessionId);
 
     // Log admin action
     await securityLogger.logAdminAction('SESSION_INVALIDATED', {
@@ -138,7 +138,7 @@ router.post('/users/:userId/invalidate-sessions',
   asyncHandler(async (req, res) => {
     const { userId } = req.params;
 
-    sessionManager.invalidateUserSessions(userId);
+    await sessionManager.invalidateUserSessions(userId);
 
     // Log admin action
     await securityLogger.logAdminAction('USER_SESSIONS_INVALIDATED', {
@@ -166,7 +166,7 @@ router.get('/health',
   requireAdmin,
   asyncHandler(async (req, res) => {
     const stats = await securityLogger.getSecurityStats();
-    const sessionStats = sessionManager.getStats();
+    const sessionStats = await sessionManager.getStats();
 
     // Determine health status based on security events
     const criticalEvents = stats.severityBreakdown.critical || 0;

@@ -1,6 +1,8 @@
 const rateLimit = require('express-rate-limit');
+const { RedisStore } = require('rate-limit-redis');
 const helmet = require('helmet');
 const { AppError } = require('./errorHandler');
+const redisClient = require('../config/redis');
 
 /**
  * Comprehensive Security Middleware
@@ -68,7 +70,7 @@ const requestSizeLimiter = (req, res, next) => {
 /**
  * Advanced rate limiting configurations
  */
-const createAdvancedRateLimiter = (options) => {
+const createAdvancedRateLimiter = (name, options) => {
   const {
     windowMs,
     max,
@@ -81,6 +83,15 @@ const createAdvancedRateLimiter = (options) => {
   return rateLimit({
     windowMs,
     max,
+    // Shared store across instances when Redis is configured; each process
+    // keeps its own counters (express-rate-limit's default) otherwise. Each
+    // limiter gets its own prefix — a MemoryStore instance is implicitly
+    // isolated per limiter, but one shared Redis keyspace is not, so without
+    // a per-limiter prefix two limiters with the same default keyGenerator
+    // (IP+User-Agent) would double-count the same request against one key.
+    store: redisClient
+      ? new RedisStore({ sendCommand: (...args) => redisClient.call(...args), prefix: `rl:${name}:` })
+      : undefined,
     message: {
       success: false,
       error: {
@@ -117,7 +128,7 @@ const createAdvancedRateLimiter = (options) => {
 /**
  * Strict authentication rate limiter
  */
-const strictAuthRateLimiter = createAdvancedRateLimiter({
+const strictAuthRateLimiter = createAdvancedRateLimiter('auth', {
   windowMs: 5 * 60 * 1000, // 5 minutes (reduced for development)
   max: 20, // 20 attempts per window (increased for development)
   message: 'Too many authentication attempts. Please try again in 5 minutes.',
@@ -127,7 +138,7 @@ const strictAuthRateLimiter = createAdvancedRateLimiter({
 /**
  * OTP request rate limiter with progressive delays
  */
-const otpRequestRateLimiter = createAdvancedRateLimiter({
+const otpRequestRateLimiter = createAdvancedRateLimiter('otp', {
   windowMs: 5 * 60 * 1000, // 5 minutes
   max: 3, // 3 OTP requests per window
   message: 'Too many OTP requests. Please wait 5 minutes before requesting again.',
@@ -141,7 +152,7 @@ const otpRequestRateLimiter = createAdvancedRateLimiter({
 /**
  * API endpoint rate limiter
  */
-const apiRateLimiter = createAdvancedRateLimiter({
+const apiRateLimiter = createAdvancedRateLimiter('api', {
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // 100 requests per window
   message: 'Too many API requests. Please try again later.',
@@ -151,7 +162,7 @@ const apiRateLimiter = createAdvancedRateLimiter({
 /**
  * Ride booking rate limiter
  */
-const rideBookingRateLimiter = createAdvancedRateLimiter({
+const rideBookingRateLimiter = createAdvancedRateLimiter('ride-booking', {
   windowMs: 60 * 1000, // 1 minute
   max: 5, // 5 ride bookings per minute
   message: 'Too many ride booking attempts. Please slow down.',

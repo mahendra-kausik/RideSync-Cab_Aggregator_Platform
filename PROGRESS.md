@@ -8,6 +8,13 @@
 **Layer 1 shipped — app is live on a public URL.** One open follow-up: demo-account login 401s on the fresh
 Atlas DB (see P-002 / Open items) — needs a decision (seed script vs. real sign-up) before the gate is fully
 clean end-to-end.
+
+**Layer 2 shipped — gate passed.** `sessionManager`, the rate limiter, and Socket.IO are all Redis-backed
+(Upstash) with in-memory fallback preserved (D-010). The two-local-instance acceptance gate ran against real
+Upstash Redis + Atlas Mongo and passed both checks (cross-instance Socket.IO delivery, session survives an
+instance restart) — see the "Layer 2 gate — PASSED" entry in `DECISIONS.md`. Along the way it caught and
+fixed two real concurrency bugs only reachable with 2+ instances: a demo-seed race (P-004) and a
+rate-limiter Redis-key collision (D-011). Lint 0/0, tests 164/164 (163 existing + 1 new).
 - **Baseline being upgraded:** working MERN cab-aggregator, 578 backend tests (~72% coverage), real-time
   Socket.IO, geospatial matching, AES-256-GCM PII encryption, circuit-breaker graceful degradation.
 
@@ -45,7 +52,20 @@ clean end-to-end.
             into the previous local/Docker Mongo, not Atlas. See P-002. Needs a decision: run
             `backend/scripts/seed.js` against the Atlas `MONGO_URI`, or verify via the app's real sign-up flow
             instead.
-- [ ] Layer 2 — Redis shared-state layer (sessions + rate limit + Socket.IO adapter; in-memory fallback).
+- [x] **Layer 2 — Redis shared-state layer (sessions + rate limit + Socket.IO adapter; in-memory fallback).**
+      - [x] `backend/config/redis.js`: one shared `ioredis` client, `null` when `REDIS_URL` unset.
+      - [x] `sessionManager` Redis-backed (same public interface) with in-memory fallback; `getStats`/
+            `invalidateSession`/`invalidateUserSessions`/`getUserSessions` now async — 5 call sites updated.
+      - [x] Rate limiter (`middleware/security.js`) uses `rate-limit-redis`'s `RedisStore`, one Redis-key
+            prefix per named limiter (`auth`/`otp`/`api`/`ride-booking`) when Redis is set — see D-011.
+      - [x] Socket.IO `@socket.io/redis-adapter` attached in `server.js` when Redis is set.
+      - [x] Removed unused `redis` v4 dep; added `ioredis`, `@socket.io/redis-adapter`, `rate-limit-redis`.
+      - [x] `scripts/seed.js`: duplicate-key on insert is now treated as "another instance won the race",
+            not fatal — see P-004.
+      - [x] `npm run lint` 0/0; `npm test` 164/164 (163 existing + new `sessionManager-redis.test.js`).
+      - [x] **Gate run and passed** against real Upstash Redis + Atlas Mongo: two local `node server.js`
+            instances, cross-instance Socket.IO room broadcast delivered, session survived an instance
+            restart. Full writeup in `DECISIONS.md` ("Layer 2 gate — PASSED").
 - [ ] Layer 3 — Load testing with k6 (req/s, p95, concurrent WS, circuit-breaker trip).
 - [ ] Layer 4 — Observability (prom-client /metrics + Grafana Cloud + correlation IDs).
 - [ ] Layer 5 — README-as-paper & resume bullets.
@@ -117,8 +137,11 @@ clean end-to-end.
 - D-008 — Fixed 8 logic bugs from full backend audit (races, auth fail-open, body-parser order, schema bug).
 - D-009 — Fixed 3 frontend logic bugs (map center lat/lng swap, unhandled token rotation, stuck register spinner).
 - P-003 — Idempotent local demo-account seeding + fixed local .env NODE_ENV leaking from Render reference block.
+- D-010 — Layer 2: ioredis-backed sessionManager/rate-limiter/Socket.IO adapter, in-memory fallback preserved.
+- P-004 — Layer 2 gate caught a demo-seed race between concurrently-booting instances; fixed (idempotent-on-conflict).
+- D-011 — Layer 2 gate caught a rate-limiter Redis-key collision across limiters; fixed (per-limiter key prefix).
 
 ## How to resume
 1. Read this file, then `CLAUDE.md`, then the relevant section of `PROJECT_PLAN.md`.
-2. Continue from the active layer (currently **Layer 1**). Build only that layer, run its gate, update this file
+2. Continue from the active layer (currently **Layer 3**). Build only that layer, run its gate, update this file
    + `DECISIONS.md`, then STOP and ask for approval before the next layer.
