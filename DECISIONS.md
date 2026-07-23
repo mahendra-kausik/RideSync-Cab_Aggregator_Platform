@@ -577,3 +577,32 @@
   custom metrics present) and correlation-ID propagation across an `await` via a standalone script
   (`requestId` appeared in the resulting JSON log line with zero changes to the `logger.info` call site).
   `npm run lint` 0/0, `npm test` 164/164 — no regressions.
+
+---
+
+## D-015 — Grafana Cloud dashboard fed by a local, on-demand Grafana Alloy scraper
+- **Date / Layer:** 2026-07-24 / Layer 4
+- **Context:** `/metrics` (D-014) only exposes a live snapshot — nothing stores history or renders it.
+  Grafana Cloud (free tier) provides hosted Prometheus storage + dashboards, but it can't reach into Render
+  and pull `/metrics` itself; something has to scrape and push (`remote_write`) to it. Render's free tier
+  has no second free process to run that scraper as an always-on job (same constraint as D-001/D-006).
+- **Decision:** Run **Grafana Alloy** (Grafana's telemetry-collector agent) as a local Docker container,
+  on-demand — started before a demo/interview or before taking README screenshots, not as a persistent
+  service. Config lives in `observability/alloy-config.alloy` (scrapes the live Render `/metrics` every 30s,
+  `remote_write`s to Grafana Cloud); real credentials go in a git-ignored `observability/.env` (see
+  `observability/.env.example` for the shape); setup/dashboard-query walkthrough in `observability/README.md`.
+- **Why:** Free, zero new infrastructure, and consistent with the local-runner-against-real-hosted-service
+  pattern already established in Layer 2's gate and Layer 3's load tests — the deployed app is real, only
+  the process pulling its metrics runs locally.
+- **Alternatives considered:** A scheduled GitHub Actions job doing the same scrape/push on a cron — would
+  keep the dashboard continuously populated, but adds a workflow file + GitHub-stored secrets for a
+  portfolio dashboard nobody's watching 24/7; rejected as more moving parts than the payoff justifies. Local
+  Prometheus+Grafana via `docker-compose` (`PROJECT_PLAN.md`'s own stated fallback) — rejected because it
+  scrapes the local backend, not the deployed one, and produces no shareable dashboard link for the README.
+- **Tradeoffs / risks:** Dashboard data only updates while the container is running (14-day retention on
+  Grafana Cloud's free tier otherwise). A Grafana Cloud API token was accidentally pasted in plaintext into
+  chat during setup — revoked immediately and replaced; no lasting exposure, but flagging per the
+  decision-log's honesty rule rather than omitting it.
+- **Verification:** Ran locally against the live Render `/metrics`; confirmed via Alloy's own
+  `prometheus_remote_storage_samples_total`/`..._failed_total` metrics (732 sent, 0 failed) and cross-checked
+  in Grafana Cloud's Explore view.

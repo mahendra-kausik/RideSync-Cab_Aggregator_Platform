@@ -106,8 +106,12 @@ D-014. Lint 0/0, tests 164/164, no regressions.
       - [x] `npm run lint` 0/0; `npm test` 164/164 — no regressions.
       - [x] Local gate: smoke-tested `/metrics` (Prometheus format, all 3 custom metrics present via
             `supertest`) and correlation-ID propagation across an `await` (verified via standalone script).
-      - [ ] **Open (manual, not code):** Grafana Cloud account/dashboard wiring — needs a live Render URL
-            scrape target and a Grafana Cloud signup; not blocking, do before Layer 5's README screenshots.
+      - [x] **Grafana Cloud wired and verified end-to-end:** `observability/alloy-config.alloy` +
+            `observability/README.md` (Grafana Alloy, run on-demand via Docker — see D-015). Ran locally
+            against the live Render `/metrics`; confirmed via Alloy's own `prometheus_remote_storage_*`
+            metrics (732 samples sent, 0 failed) and cross-checked in Grafana Cloud Explore. Dashboard panels
+            (p50/p95/p99 latency, request rate, error rate, circuit-breaker state) are documented with exact
+            PromQL in `observability/README.md`, ready to build before Layer 5's README screenshots.
 - [ ] Layer 5 — README-as-paper & resume bullets.
 
 ## Deployed system — quick reference (fill in as layers ship)
@@ -186,6 +190,7 @@ D-014. Lint 0/0, tests 164/164, no regressions.
   due to a global `apiRateLimiter` + `apiAbuseDetection` gate on all `/api/*` routes the earlier plan missed.
 - D-013 — Layer 3 acceptance gate results (REST/WS/circuit-breaker numbers).
 - D-014 — Layer 4: prom-client `/metrics` (default + 3 custom metrics) + AsyncLocalStorage correlation IDs.
+- D-015 — Grafana Cloud dashboard fed by a local, on-demand Grafana Alloy scraper (verified end-to-end).
 
 ## How to resume
 1. Read this file, then `CLAUDE.md`, then the relevant section of `PROJECT_PLAN.md`.
