@@ -47,6 +47,11 @@ if (redisClient) {
   const { createAdapter } = require('@socket.io/redis-adapter');
   const pubClient = redisClient.duplicate();
   const subClient = redisClient.duplicate();
+  // duplicate() returns a fresh EventEmitter — it does not inherit the
+  // 'error' listener from config/redis.js, so a dropped connection here
+  // would otherwise crash the process (unhandled 'error' event).
+  pubClient.on('error', (err) => console.error('❌ Redis pub client error:', err.message));
+  subClient.on('error', (err) => console.error('❌ Redis sub client error:', err.message));
   io.adapter(createAdapter(pubClient, subClient));
 }
 

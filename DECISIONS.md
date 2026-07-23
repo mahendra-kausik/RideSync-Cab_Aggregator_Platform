@@ -451,3 +451,20 @@
 - **Verification artifact:** ad-hoc Node script (not committed — one-off verification, not a repo
   deliverable), spawns the two instances, logs in the seeded demo rider/driver, creates a throwaway ride
   directly via the `Ride` model, runs both checks, and cleans up (kills both processes, deletes the ride).
+
+## P-005 — Render deploy of Layer 2 crashed at runtime: unhandled `error` event on duplicated Redis clients
+- **Date / Layer:** 2026-07-23 / Layer 2 (post-deploy)
+- **Context:** After pushing D-010/D-011 (commit `299e551`), the Render deploy built successfully but the
+  process exited with status 1 while running. `server.js` wires the Socket.IO Redis adapter via
+  `redisClient.duplicate()` (twice, for `pubClient`/`subClient`). `ioredis`'s `.duplicate()` returns a
+  brand-new `EventEmitter` — it does **not** carry over the `.on('error', ...)` listener attached to the
+  original client in `config/redis.js`. Node treats an `error` event with zero listeners as fatal and
+  crashes the process. Locally this never reproduced because the Layer 2 gate (P-004/D-011) ran two
+  long-lived, stable connections against Upstash; on Render, any transient connection hiccup on either
+  duplicated client (cold TLS handshake, brief network blip) was enough to trigger the crash on boot.
+- **Action:** Added `.on('error', ...)` handlers (log-and-continue, matching the pattern in
+  `config/redis.js`) to both `pubClient` and `subClient` in `server.js` immediately after `.duplicate()`.
+- **Why:** Root-cause fix at the one place duplicated clients are created, rather than papering over it
+  with a process-level `uncaughtException` handler that would mask other real crashes.
+- **Tradeoffs / risks:** None found — a dropped pub/sub connection now degrades to single-instance socket
+  behavior (per D-003's already-accepted tradeoff) instead of crashing the whole process.
