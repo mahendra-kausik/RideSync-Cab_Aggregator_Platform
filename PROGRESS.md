@@ -15,6 +15,13 @@ Upstash Redis + Atlas Mongo and passed both checks (cross-instance Socket.IO del
 instance restart) — see the "Layer 2 gate — PASSED" entry in `DECISIONS.md`. Along the way it caught and
 fixed two real concurrency bugs only reachable with 2+ instances: a demo-seed race (P-004) and a
 rate-limiter Redis-key collision (D-011). Lint 0/0, tests 164/164 (163 existing + 1 new).
+
+**Layer 3 shipped — gate passed.** Three `load/` scenarios (k6 REST ramp, Node/`socket.io-client` WS hold,
+Node fault-injection breaker trip), all local against real Atlas + Upstash, zero backend runtime code
+changes. Results: `/health` sustained 100 req/s at p95=3.72ms (0% errors); 200/200 concurrent WebSocket
+connections held stable for 20s; circuit breaker CLOSED→OPEN captured cleanly (OPEN→HALF_OPEN not externally
+observable — documented limitation, see D-013). Along the way, discovered a rate-limit gate the earlier
+research pass missed — see D-012.
 - **Baseline being upgraded:** working MERN cab-aggregator, 578 backend tests (~72% coverage), real-time
   Socket.IO, geospatial matching, AES-256-GCM PII encryption, circuit-breaker graceful degradation.
 
@@ -66,7 +73,19 @@ rate-limiter Redis-key collision (D-011). Lint 0/0, tests 164/164 (163 existing 
       - [x] **Gate run and passed** against real Upstash Redis + Atlas Mongo: two local `node server.js`
             instances, cross-instance Socket.IO room broadcast delivered, session survived an instance
             restart. Full writeup in `DECISIONS.md` ("Layer 2 gate — PASSED").
-- [ ] Layer 3 — Load testing with k6 (req/s, p95, concurrent WS, circuit-breaker trip).
+- [x] **Layer 3 — Load testing with k6 (req/s, p95, concurrent WS, circuit-breaker trip).**
+      - [x] `load/rest-ramp.js`: k6 ramp against `GET /health` (100 req/s, p95=3.72ms, 0% errors) +
+            capped `POST /api/rides/estimate` (4/min, p95=216.54ms, 0% errors) — see D-012 for why
+            `/estimate` is capped, not ramped.
+      - [x] `load/ws-hold.js`: Node + `socket.io-client` (already a project dep, same major version as the
+            server) holding concurrent authenticated Socket.IO connections — 200/200 connected, 0 dropped
+            over a 20s hold.
+      - [x] `load/breaker-trip.js`: Node fault-injection against `/api/test/external-service-test` +
+            `/health` polling — captured `maps` breaker CLOSED→OPEN (3 failures, threshold 3); OPEN→HALF_OPEN
+            not externally observable (single-request transient, documented not fixed).
+      - [x] `load/README.md`: results table + reproduction config + honesty-guardrails limitations section.
+      - [x] Zero backend runtime code changes.
+      - [x] **Gate passed** — see D-013 for full results.
 - [ ] Layer 4 — Observability (prom-client /metrics + Grafana Cloud + correlation IDs).
 - [ ] Layer 5 — README-as-paper & resume bullets.
 
@@ -140,8 +159,13 @@ rate-limiter Redis-key collision (D-011). Lint 0/0, tests 164/164 (163 existing 
 - D-010 — Layer 2: ioredis-backed sessionManager/rate-limiter/Socket.IO adapter, in-memory fallback preserved.
 - P-004 — Layer 2 gate caught a demo-seed race between concurrently-booting instances; fixed (idempotent-on-conflict).
 - D-011 — Layer 2 gate caught a rate-limiter Redis-key collision across limiters; fixed (per-limiter key prefix).
+- P-005 — Render deploy crash: unhandled Redis errors + `maxRetriesPerRequest` fatal on boot churn; fixed
+  (`maxRetriesPerRequest: null`); post-fix idle-reconnect cycling confirmed expected/harmless.
+- D-012 — Layer 3 REST load test targets `/health` for throughput; `/api/rides/estimate` capped, not ramped,
+  due to a global `apiRateLimiter` + `apiAbuseDetection` gate on all `/api/*` routes the earlier plan missed.
+- D-013 — Layer 3 acceptance gate results (REST/WS/circuit-breaker numbers).
 
 ## How to resume
 1. Read this file, then `CLAUDE.md`, then the relevant section of `PROJECT_PLAN.md`.
-2. Continue from the active layer (currently **Layer 3**). Build only that layer, run its gate, update this file
-   + `DECISIONS.md`, then STOP and ask for approval before the next layer.
+2. Continue from the active layer (currently **Layer 4 — Observability**, pending approval). Build only that
+   layer, run its gate, update this file + `DECISIONS.md`, then STOP and ask for approval before the next layer.

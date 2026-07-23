@@ -1,0 +1,13 @@
+{
+  "name": "ridesync-load",
+  "private": true,
+  "description": "k6 + Node load-test scenarios for RideSync Layer 3 (not part of the app build)",
+  "scripts": {
+    "rest": "k6 run rest-ramp.js",
+    "ws": "node ws-hold.js",
+    "breaker": "node breaker-trip.js"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.7.2"
+  }
+}

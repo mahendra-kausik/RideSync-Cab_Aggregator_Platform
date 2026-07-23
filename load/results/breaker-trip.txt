@@ -1,0 +1,135 @@
+[2026-07-23T18:34:36.943Z] start: maps=CLOSED
+[2026-07-23T18:34:37.187Z] after failure 1: maps=CLOSED
+[2026-07-23T18:34:37.431Z] after failure 2: maps=CLOSED
+[2026-07-23T18:34:37.672Z] after failure 3: maps=OPEN
+Waiting 30000ms for resetTimeout, polling every 2s for HALF_OPEN...
+[2026-07-23T18:34:37.676Z] waiting: maps=OPEN
+[2026-07-23T18:34:39.688Z] waiting: maps=OPEN
+[2026-07-23T18:34:41.699Z] waiting: maps=OPEN
+[2026-07-23T18:34:43.721Z] waiting: maps=OPEN
+[2026-07-23T18:34:45.740Z] waiting: maps=OPEN
+[2026-07-23T18:34:47.746Z] waiting: maps=OPEN
+[2026-07-23T18:34:49.752Z] waiting: maps=OPEN
+[2026-07-23T18:34:51.773Z] waiting: maps=OPEN
+[2026-07-23T18:34:53.782Z] waiting: maps=OPEN
+[2026-07-23T18:34:55.802Z] waiting: maps=OPEN
+[2026-07-23T18:34:57.824Z] waiting: maps=OPEN
+[2026-07-23T18:34:59.840Z] waiting: maps=OPEN
+[2026-07-23T18:35:01.853Z] waiting: maps=OPEN
+[2026-07-23T18:35:03.869Z] waiting: maps=OPEN
+[2026-07-23T18:35:05.876Z] waiting: maps=OPEN
+[2026-07-23T18:35:07.884Z] waiting: maps=OPEN
+[2026-07-23T18:35:10.131Z] after reset-window probe: maps=OPEN
+--- breaker-trip results ---
+{
+  "sawClosed": true,
+  "sawOpen": true,
+  "sawHalfOpen": false,
+  "timeline": [
+    {
+      "label": "start",
+      "state": "CLOSED",
+      "at": "2026-07-23T18:34:36.944Z"
+    },
+    {
+      "label": "after failure 1",
+      "state": "CLOSED",
+      "at": "2026-07-23T18:34:37.187Z"
+    },
+    {
+      "label": "after failure 2",
+      "state": "CLOSED",
+      "at": "2026-07-23T18:34:37.432Z"
+    },
+    {
+      "label": "after failure 3",
+      "state": "OPEN",
+      "at": "2026-07-23T18:34:37.673Z"
+    },
+    {
+      "label": "waiting",
+      "state": "OPEN",
+      "at": "2026-07-23T18:34:37.677Z"
+    },
+    {
+      "label": "waiting",
+      "state": "OPEN",
+      "at": "2026-07-23T18:34:39.688Z"
+    },
+    {
+      "label": "waiting",
+      "state": "OPEN",
+      "at": "2026-07-23T18:34:41.700Z"
+    },
+    {
+      "label": "waiting",
+      "state": "OPEN",
+      "at": "2026-07-23T18:34:43.722Z"
+    },
+    {
+      "label": "waiting",
+      "state": "OPEN",
+      "at": "2026-07-23T18:34:45.740Z"
+    },
+    {
+      "label": "waiting",
+      "state": "OPEN",
+      "at": "2026-07-23T18:34:47.746Z"
+    },
+    {
+      "label": "waiting",
+      "state": "OPEN",
+      "at": "2026-07-23T18:34:49.753Z"
+    },
+    {
+      "label": "waiting",
+      "state": "OPEN",
+      "at": "2026-07-23T18:34:51.774Z"
+    },
+    {
+      "label": "waiting",
+      "state": "OPEN",
+      "at": "2026-07-23T18:34:53.782Z"
+    },
+    {
+      "label": "waiting",
+      "state": "OPEN",
+      "at": "2026-07-23T18:34:55.802Z"
+    },
+    {
+      "label": "waiting",
+      "state": "OPEN",
+      "at": "2026-07-23T18:34:57.824Z"
+    },
+    {
+      "label": "waiting",
+      "state": "OPEN",
+      "at": "2026-07-23T18:34:59.840Z"
+    },
+    {
+      "label": "waiting",
+      "state": "OPEN",
+      "at": "2026-07-23T18:35:01.853Z"
+    },
+    {
+      "label": "waiting",
+      "state": "OPEN",
+      "at": "2026-07-23T18:35:03.870Z"
+    },
+    {
+      "label": "waiting",
+      "state": "OPEN",
+      "at": "2026-07-23T18:35:05.876Z"
+    },
+    {
+      "label": "waiting",
+      "state": "OPEN",
+      "at": "2026-07-23T18:35:07.885Z"
+    },
+    {
+      "label": "after reset-window probe",
+      "state": "OPEN",
+      "at": "2026-07-23T18:35:10.131Z"
+    }
+  ]
+}

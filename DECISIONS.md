@@ -487,3 +487,51 @@
   adding TCP keepalive, since the reconnect behavior is expected for Upstash's serverless tier and "fixing"
   it further wasn't shown to solve a real problem. Worth a quick check of Upstash's dashboard command-quota
   usage if this project ever runs near the free-tier daily command limit.
+
+## D-012 — Layer 3 REST load test targets `/health` for throughput, not `/api/rides/estimate`
+- **Date / Layer:** 2026-07-23 / Layer 3
+- **Context:** Ran the first k6 REST ramp against `POST /api/rides/estimate` (chosen because it's public and
+  carries no *named* rate limiter — `backend/routes/rides.js:38`). It failed almost immediately: after ~100
+  requests, every response became `429 RATE_LIMIT_EXCEEDED`. Root cause is two gates neither prior research
+  pass had fully accounted for, both sitting in front of *every* `/api/*` route regardless of the target
+  route's own limiter: `apiRateLimiter` (100 req/15min per IP+User-Agent, Redis-backed via
+  `rate-limit-redis` — `backend/middleware/security.js:155` — so it survives a server restart, confirmed by
+  restarting the backend and still getting 429s) and `apiAbuseDetection` (100 req/min, in-memory,
+  self-perpetuating once tripped since it only clears after 60s of zero requests —
+  `backend/middleware/advancedSecurity.js:305`). The 15-minute window is the binding constraint.
+- **Decision:** `GET /health` (mounted directly on `app`, outside `app.use('/api', ...)` — exempt from both
+  gates) carries the REST throughput/p95 numbers. `/api/rides/estimate` stays in the test but at a fixed low
+  rate (4 req/min, well under both caps) to report real business-logic latency, not throughput. Asked the
+  user to choose between this, an env-gated bypass of `apiAbuseDetection`, or ramping `/estimate` itself at
+  a rate under the cap; user chose this option.
+- **Why:** Zero backend code changes (matches the already-finalized "local-primary, no runtime changes"
+  Layer 3 strategy); `/health` still exercises a real code path (`dbConnection.getConnectionStatus()` +
+  `gracefulDegradation.getHealthStatus()`); the numbers are honest about what's actually being measured
+  instead of silently reporting a throughput figure that's really "how fast can you hit a route before its
+  own abuse gate kicks in."
+- **Alternatives considered:** (1) `LOAD_TEST_MODE` env flag to skip `apiAbuseDetection` during measurement
+  — rejected, touches production security middleware for a resume metric; (2) ramp `/estimate` itself capped
+  under 100/15min (~6 req/min) — rejected in favor of (1)'s zero-code-change sibling since `/health` already
+  gives a clean throughput number and `/estimate`'s fare-calculation logic doesn't meaningfully differ under
+  load (no DB/Redis I/O in that code path either).
+- **Tradeoffs / risks:** The headline req/s number measures the HTTP/health-check path, not a business-logic
+  endpoint under load — documented explicitly in `load/README.md`'s "Known limitations" so it isn't
+  overstated on a resume.
+
+## D-013 — Layer 3 acceptance gate results
+- **Date / Layer:** 2026-07-23 / Layer 3
+- **Context:** Ran all three `load/` scenarios locally (`NODE_ENV=development`, backend against real Atlas
+  M0 + Upstash Redis, not local Docker — consistent with the Layer 2 gate's precedent of testing local
+  backend processes against real hosted data services).
+- **Decision / Results:** REST ramp: `/health` sustained up to 100 req/s at p95=3.72ms, 0% errors, 7,725
+  requests; `/estimate` (capped 4/min) p95=216.54ms, 0% errors. WebSocket hold: 200/200 concurrent Socket.IO
+  connections established (0 handshake failures) and stable through a 20s hold (0 dropped). Circuit breaker:
+  `maps` breaker went CLOSED→OPEN after 3 injected failures (threshold 3) in under 1 second; OPEN→HALF_OPEN
+  was not externally observable via `/health` polling — the test endpoint always re-injects a failure, so
+  the breaker flips HALF_OPEN→OPEN again within the same request that set it, faster than any external
+  poll can catch (documented as an honest limitation, not treated as a bug). Full data in `load/README.md`
+  and `load/results/`.
+- **Why:** These are the resume-defensible numbers Layer 3 exists to produce; recorded with exact repro
+  config (commit SHA, Node/k6 versions, host specs) per `CLAUDE.md`'s reproducible-measurement rule.
+- **Tradeoffs / risks:** Numbers are from a single run on one dev machine, not a sustained/repeated
+  benchmark — acceptable for a portfolio metric, not a capacity-planning SLA.
