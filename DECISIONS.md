@@ -468,3 +468,15 @@
   with a process-level `uncaughtException` handler that would mask other real crashes.
 - **Tradeoffs / risks:** None found — a dropped pub/sub connection now degrades to single-instance socket
   behavior (per D-003's already-accepted tradeoff) instead of crashing the whole process.
+- **Follow-up (same session):** the error-listener fix alone didn't stop the crash. Render's log showed the
+  server actually boot successfully (`🚀 Backend server running`), then ~200ms later a queued command threw
+  `MaxRetriesPerRequestError` on the **main** shared client too (not just a duplicate) — proving this is
+  transient `ECONNRESET` churn from opening 3 Redis connections (main + pub + sub) near-simultaneously
+  against Upstash at cold boot, not a listener gap. That thrown error is an unhandled promise rejection, and
+  the app's pre-existing `handleUnhandledRejection` (`middleware/errorHandler.js`) treats any unhandled
+  rejection as fatal (`process.exit(1)`) — appropriate in general, but here it turned a self-healing
+  reconnect into a hard crash. Fixed by setting `maxRetriesPerRequest: null` on all three connections
+  (`config/redis.js`'s shared client, inherited automatically by `server.js`'s `.duplicate()` pub/sub
+  clients) — ioredis's documented setting for exactly this case: commands wait for reconnection instead of
+  throwing after N tries. Offline command queueing (`enableOfflineQueue`, default `true`) already buffers
+  requests during the gap, so this only removes an artificial timeout, not correctness.
