@@ -1,0 +1,24 @@
+// Grafana Alloy config: scrapes the live Render /metrics endpoint and
+// remote_writes it to Grafana Cloud's hosted Prometheus.
+// Run locally/on-demand (see observability/README.md) — Render's free tier
+// has no second free process to host this as an always-on job.
+
+prometheus.scrape "ridesync_render" {
+  targets = [
+    {"__address__" = env("RENDER_METRICS_HOST"), "__scheme__" = "https"},
+  ]
+  metrics_path    = "/metrics"
+  scrape_interval = "30s"
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.remote_write "grafana_cloud" {
+  endpoint {
+    url = env("GRAFANA_CLOUD_PROMETHEUS_URL")
+
+    basic_auth {
+      username = env("GRAFANA_CLOUD_PROMETHEUS_USER")
+      password = env("GRAFANA_CLOUD_API_KEY")
+    }
+  }
+}
