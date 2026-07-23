@@ -580,6 +580,53 @@
 
 ---
 
+## P-006 — Live incident: every `/api/*` route hangs on a stale Redis connection; first fix attempt made it worse and was reverted
+- **Date / Layer:** 2026-07-24 / discovered while verifying P-002's Atlas demo-account seeding
+- **Context:** Confirmed live — `/health` responds in ~300ms, but `/api/auth/login-phone` and even bare
+  `/api` (no DB/Redis logic in its own handler) hung indefinitely (25s+, no response). Root cause: shared
+  `apiRateLimiter` (mounted on all `/api/*`) calls `redisClient.call(...)` directly via `rate-limit-redis`'s
+  `sendCommand`, with no timeout; `sessionManager`'s private storage methods (`_putSession`/`_getSession`/etc.)
+  have the same unguarded pattern, so login would hang even without the rate limiter. Combined with
+  `maxRetriesPerRequest: null` (the P-005 fix), a command sent on a connection that *looks* open but is
+  actually stale (Upstash silently drops idle TCP connections) waits forever. Verified Upstash itself was
+  healthy throughout — a fresh `ioredis` connection from a local machine `PING`'d in ~1.2s — so this is
+  specifically Render's long-lived connection going stale, not a Redis outage.
+- **First attempt (reverted, do not repeat):** Added `commandTimeout: 5000` to the shared `ioredis` client.
+  This bounded *every* command including ones `@socket.io/redis-adapter` issues internally during boot
+  (subscribing its pub/sub channels) while 3 Redis connections open near-simultaneously — the exact same
+  boot-churn window that caused the original P-005 crash. One of those internal commands hit the timeout,
+  rejected, and — since the adapter library doesn't catch it — became an unhandled promise rejection,
+  which `handleUnhandledRejection()` correctly treats as fatal and exits the process. Render then restarted
+  into the same timing window and crashed again: **an infinite boot crash-loop, strictly worse than the
+  original hang** (fully down vs. slow). Confirmed via live Render deploy logs (`Unhandled Promise Rejection:
+  Error: Command timed out` at `ioredis/built/Command.js`, then `Exited with status 1`).
+- **Action taken this session:** Reverted the `commandTimeout` commit (`git revert`, commit `823cfc3`) and
+  pushed immediately to stop the crash-loop and restore the prior (hanging-but-not-crashing) live state.
+  Discarded a half-built, not-yet-verified follow-up fix (localized `withRedisTimeout` wrapper only around
+  request-time call sites — rate limiter's `sendCommand` and `sessionManager`'s 7 private storage methods —
+  explicitly leaving boot-time/library-internal commands unbounded) — one test
+  (`sessionManager-redis.test.js`) was failing against it and wasn't diagnosed before the session ended.
+- **Why revert-first:** A live, currently-broken production site takes priority over finishing the "real" fix
+  in the same sitting; `git revert` is safe/non-destructive (new commit, full history preserved) and gets
+  back to a known state fast, matching `CLAUDE.md`'s guidance to prefer reversible steps under uncertainty.
+- **Status — UNRESOLVED, next session must resume here:** The revert only removes the crash-loop; the
+  underlying hang-on-stale-Redis-connection bug (P-006's actual root cause) is **still live and unfixed**.
+  Next session: (1) verify the revert actually redeployed and the site is back to at least not-crash-looping
+  (`curl`/fetch `/health` and `/api/auth/login-phone` against the live Render URL); (2) re-derive the
+  localized-timeout fix (`backend/utils/withRedisTimeout.js` racing a 3s timeout, wrapped only around
+  `middleware/security.js`'s `sendCommand` and `sessionManager.js`'s 7 private `_put/_get/_delete/_blacklist/
+  _isBlacklisted/_getUserSessionIds/_scanCount` methods — never the shared client's own options, and never
+  anything `@socket.io/redis-adapter` touches during boot); (3) diagnose and fix the failing
+  `sessionManager-redis.test.js` test before it's considered done; (4) test locally against real Upstash
+  before pushing to main again, and watch the Render deploy log (not just the GitHub Actions/deploy-hook
+  status, which only confirms the hook fired, not that the app booted cleanly) before declaring it fixed.
+- **Tradeoffs / risks:** The reverted (current live) state still has the original bug — `/api/*` can hang for
+  an indeterminate time whenever Render's Redis connection goes stale, until `ioredis` eventually notices and
+  reconnects on its own. Acceptable short-term (matches pre-Layer-4 behavior, not a regression from anything
+  shipped and approved), not acceptable as a final state.
+
+---
+
 ## D-015 — Grafana Cloud dashboard fed by a local, on-demand Grafana Alloy scraper
 - **Date / Layer:** 2026-07-24 / Layer 4
 - **Context:** `/metrics` (D-014) only exposes a live snapshot — nothing stores history or renders it.

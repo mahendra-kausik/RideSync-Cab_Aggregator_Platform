@@ -5,9 +5,20 @@
 > lives in `DECISIONS.md`; headline numbers + architecture live in `README.md`.
 
 ## Current status
-**Layer 1 shipped — app is live on a public URL.** One open follow-up: demo-account login 401s on the fresh
-Atlas DB (see P-002 / Open items) — needs a decision (seed script vs. real sign-up) before the gate is fully
-clean end-to-end.
+**⚠️ ACTIVE INCIDENT — READ THIS FIRST (P-006 in DECISIONS.md).** `/api/*` routes on the live Render app can
+hang indefinitely when its Redis connection to Upstash goes stale — confirmed live, root-caused, a first fix
+attempt made it *worse* (boot crash-loop) and was reverted (`git revert`, commit `823cfc3`, pushed). The
+revert only restores the pre-crash-loop (hangs-but-doesn't-crash) state — **the underlying bug is still
+unfixed**. Full root cause, the broken first attempt, and exactly what to do next are in P-006. Next session:
+verify the revert deployed cleanly first, then re-derive the localized-timeout fix described there.
+
+**Layer 1 shipped — app is live on a public URL.** Demo-account login 401 (P-002) is now **resolved** — all
+three demo accounts (admin/rider/driver) were seeded directly against the live Atlas database this session
+via `npm run seed` with `MONGO_URI` pointed at Atlas. Note: `backend/scripts/seed.js` has the demo passwords
+hardcoded and is tracked in git (public repo) — so those credentials are effectively public regardless of
+whether they're printed in the README; publish rider/driver in the README as "try it live," keep admin's
+password out of the README for convenience/griefing-reduction only, not as real secrecy (see P-006 session
+for context on why the live API needs to actually work before any of this matters for a demo).
 
 **Layer 2 shipped — gate passed.** `sessionManager`, the rate limiter, and Socket.IO are all Redis-backed
 (Upstash) with in-memory fallback preserved (D-010). The two-local-instance acceptance gate ran against real
@@ -62,10 +73,9 @@ D-014. Lint 0/0, tests 164/164, no regressions.
       - [x] cron-job.org keep-warm ping created (`GET /health` every 10 min) against the live Render URL.
       - [x] `.env.example` / `frontend/.env.example` cleaned up: fixed stale `VITE_API_URL` → `VITE_API_BASE_URL`
             (didn't match the actual code, `apiClient.ts:35`) and de-duplicated `frontend/.env.example`.
-      - [ ] **Open:** demo-account login returns 401 against the fresh Atlas DB — old demo users were seeded
-            into the previous local/Docker Mongo, not Atlas. See P-002. Needs a decision: run
-            `backend/scripts/seed.js` against the Atlas `MONGO_URI`, or verify via the app's real sign-up flow
-            instead.
+      - [x] **Resolved:** ran `backend/scripts/seed.js` against the live Atlas `MONGO_URI` — all 3 demo
+            accounts (admin/rider/driver) now exist there. See P-002. Login itself is currently blocked by
+            the unrelated P-006 incident (see top of this file) — re-verify demo logins once P-006 is fixed.
 - [x] **Layer 2 — Redis shared-state layer (sessions + rate limit + Socket.IO adapter; in-memory fallback).**
       - [x] `backend/config/redis.js`: one shared `ioredis` client, `null` when `REDIS_URL` unset.
       - [x] `sessionManager` Redis-backed (same public interface) with in-memory fallback; `getStats`/
@@ -130,8 +140,11 @@ D-014. Lint 0/0, tests 164/164, no regressions.
 - **Remaining Layer 1 code work:** none blocking — rest of Layer 1 is hosted-account creation + env wiring.
 
 ## Open items
-- **P-002:** demo-account login 401s against Atlas (old demo users never migrated from local Mongo). Needs a
-  decision: run `seed.js` against Atlas, or use the app's real sign-up flow instead.
+- **P-006 (ACTIVE, top priority):** `/api/*` can hang indefinitely on a stale Render→Upstash Redis
+  connection. Reverted a first fix attempt that caused a worse boot crash-loop. Root cause, what was tried,
+  and the exact next steps are fully written up in `DECISIONS.md`'s P-006 entry — read it before touching
+  `backend/config/redis.js`, `middleware/security.js`, or `sessionManager.js` again.
+- ~~P-002: demo-account login 401s against Atlas~~ — resolved, accounts seeded directly on Atlas.
 - Layer 1 hosting free-tier limits confirmed live in practice (Render cold-start behavior, Atlas M0, Upstash
   free tier) — no surprises hit so far.
 
@@ -191,9 +204,22 @@ D-014. Lint 0/0, tests 164/164, no regressions.
 - D-013 — Layer 3 acceptance gate results (REST/WS/circuit-breaker numbers).
 - D-014 — Layer 4: prom-client `/metrics` (default + 3 custom metrics) + AsyncLocalStorage correlation IDs.
 - D-015 — Grafana Cloud dashboard fed by a local, on-demand Grafana Alloy scraper (verified end-to-end).
+- P-006 — **ACTIVE.** `/api/*` hangs on a stale Redis connection; a first fix caused a worse boot crash-loop
+  and was reverted (commit `823cfc3`). Root cause + exact next steps in `DECISIONS.md`.
 
 ## How to resume
-1. Read this file, then `CLAUDE.md`, then the relevant section of `PROJECT_PLAN.md`.
-2. Continue from the active layer (currently **Layer 5 — README-as-paper & defense**, pending approval).
-   Build only that layer, run its gate, update this file + `DECISIONS.md`, then STOP and ask for approval
-   before the next layer.
+1. Read this file, then `CLAUDE.md`, then `DECISIONS.md`'s **P-006** entry — that's the active incident and
+   takes priority over everything else, including Layer 5.
+2. **First**, verify the revert actually deployed cleanly: check the live Render deploy log (not just
+   GitHub Actions/the deploy-hook status — that only confirms the hook fired) for a clean boot with no
+   `Unhandled Promise Rejection` and no repeated `Exited with status 1`. Then re-test `/health` and
+   `/api/auth/login-phone` against the live URL.
+3. Once confirmed stable (even if still occasionally hanging on stale Redis — that's the known, pre-existing
+   P-006 bug, not new), re-derive the localized-timeout fix described in P-006 (wrap only
+   `middleware/security.js`'s `sendCommand` and `sessionManager.js`'s private storage methods — never the
+   shared Redis client's own options, never anything the Socket.IO adapter touches at boot). Diagnose the
+   `sessionManager-redis.test.js` failure that stopped the previous attempt before it's considered done.
+   Test locally against real Upstash before pushing to main.
+4. Only after P-006 is genuinely fixed and verified live: resume **Layer 5 — README-as-paper & defense**
+   (pending approval, not yet started). Build only that layer, run its gate, update this file + `DECISIONS.md`,
+   then STOP and ask for approval before anything further.
