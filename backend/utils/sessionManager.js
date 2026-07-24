@@ -2,7 +2,6 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { User } = require('../models');
 const redis = require('../config/redis');
-const { withRedisTimeout } = require('./withRedisTimeout');
 
 /**
  * Secure Session Management Utility
@@ -342,15 +341,11 @@ return;
 
   // ---- storage backends (Redis when configured, else in-memory) ----
 
-  // Each Redis call below is wrapped in withRedisTimeout (P-006) so a stale
-  // connection rejects fast instead of hanging the request indefinitely; the
-  // rejection propagates up to validateSession's existing try/catch, which
-  // already returns { valid: false, error } — no new error paths.
   async _putSession(sessionId, sessionData) {
     if (this.redis) {
       const ttlSeconds = Math.floor(this.sessionTimeout / 1000);
-      await withRedisTimeout(this.redis.set(`${SESSION_PREFIX}${sessionId}`, JSON.stringify(sessionData), 'EX', ttlSeconds), undefined, 'session:set');
-      await withRedisTimeout(this.redis.sadd(`${USER_SESSIONS_PREFIX}${sessionData.userId}`, sessionId), undefined, 'session:sadd');
+      await this.redis.set(`${SESSION_PREFIX}${sessionId}`, JSON.stringify(sessionData), 'EX', ttlSeconds);
+      await this.redis.sadd(`${USER_SESSIONS_PREFIX}${sessionData.userId}`, sessionId);
       return;
     }
     this.activeSessions.set(sessionId, sessionData);
@@ -358,7 +353,7 @@ return;
 
   async _getSession(sessionId) {
     if (this.redis) {
-      const raw = await withRedisTimeout(this.redis.get(`${SESSION_PREFIX}${sessionId}`), undefined, 'session:get');
+      const raw = await this.redis.get(`${SESSION_PREFIX}${sessionId}`);
       if (!raw) {
 return null;
 }
@@ -373,9 +368,9 @@ return null;
   async _deleteSession(sessionId) {
     if (this.redis) {
       const session = await this._getSession(sessionId);
-      await withRedisTimeout(this.redis.del(`${SESSION_PREFIX}${sessionId}`), undefined, 'session:del');
+      await this.redis.del(`${SESSION_PREFIX}${sessionId}`);
       if (session) {
-        await withRedisTimeout(this.redis.srem(`${USER_SESSIONS_PREFIX}${session.userId}`, sessionId), undefined, 'session:srem');
+        await this.redis.srem(`${USER_SESSIONS_PREFIX}${session.userId}`, sessionId);
       }
       return;
     }
@@ -385,7 +380,7 @@ return null;
   async _getUserSessionIds(userId) {
     const userIdStr = userId.toString();
     if (this.redis) {
-      return withRedisTimeout(this.redis.smembers(`${USER_SESSIONS_PREFIX}${userIdStr}`), undefined, 'session:smembers');
+      return this.redis.smembers(`${USER_SESSIONS_PREFIX}${userIdStr}`);
     }
     const ids = [];
     for (const [sessionId, session] of this.activeSessions.entries()) {
@@ -398,7 +393,7 @@ ids.push(sessionId);
 
   async _blacklist(hashedToken) {
     if (this.redis) {
-      await withRedisTimeout(this.redis.set(`${BLACKLIST_PREFIX}${hashedToken}`, '1', 'EX', BLACKLIST_TTL_SECONDS), undefined, 'blacklist:set');
+      await this.redis.set(`${BLACKLIST_PREFIX}${hashedToken}`, '1', 'EX', BLACKLIST_TTL_SECONDS);
       return;
     }
     this.blacklistedTokens.add(hashedToken);
@@ -406,7 +401,7 @@ ids.push(sessionId);
 
   async _isBlacklisted(hashedToken) {
     if (this.redis) {
-      return (await withRedisTimeout(this.redis.exists(`${BLACKLIST_PREFIX}${hashedToken}`), undefined, 'blacklist:exists')) === 1;
+      return (await this.redis.exists(`${BLACKLIST_PREFIX}${hashedToken}`)) === 1;
     }
     return this.blacklistedTokens.has(hashedToken);
   }
@@ -415,7 +410,7 @@ ids.push(sessionId);
     let cursor = '0';
     let count = 0;
     do {
-      const [nextCursor, keys] = await withRedisTimeout(this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100), undefined, 'scan');
+      const [nextCursor, keys] = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
       cursor = nextCursor;
       count += keys.length;
     } while (cursor !== '0');

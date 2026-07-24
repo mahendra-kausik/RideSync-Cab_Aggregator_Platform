@@ -5,16 +5,12 @@
 > lives in `DECISIONS.md`; headline numbers + architecture live in `README.md`.
 
 ## Current status
-**P-006 — RESOLVED (pending live verification after deploy).** `/api/*` routes could hang indefinitely when
-Render's Redis connection to Upstash went stale. Root-caused, a first fix attempt made it worse (boot
-crash-loop, reverted), then re-derived as a localized `withRedisTimeout` wrapper (`backend/utils/
-withRedisTimeout.js`) around only the two request-time Redis call sites — the rate limiter's `sendCommand`
-(`middleware/security.js`) and `sessionManager`'s 8 private storage methods — never the shared client's own
-options or anything the Socket.IO adapter touches at boot (that combination caused the crash-loop). Lint
-0/0, tests 166/166 (164 existing + 2 new), verified locally against real Upstash + Atlas: clean boot, demo
-rider login succeeded end-to-end. Full writeup: DECISIONS.md's "P-006 fix" entry. **Not yet deployed/verified
-live** — next session (or later this one) must push, watch the Render deploy log for a clean boot, then
-re-hit `/health` and `/api/auth/login-phone` on the live URL.
+**⚠️ ACTIVE INCIDENT — READ THIS FIRST (P-006 in DECISIONS.md).** `/api/*` routes on the live Render app can
+hang indefinitely when its Redis connection to Upstash goes stale — confirmed live, root-caused, a first fix
+attempt made it *worse* (boot crash-loop) and was reverted (`git revert`, commit `823cfc3`, pushed). The
+revert only restores the pre-crash-loop (hangs-but-doesn't-crash) state — **the underlying bug is still
+unfixed**. Full root cause, the broken first attempt, and exactly what to do next are in P-006. Next session:
+verify the revert deployed cleanly first, then re-derive the localized-timeout fix described there.
 
 **Layer 1 shipped — app is live on a public URL.** Demo-account login 401 (P-002) is now **resolved** — all
 three demo accounts (admin/rider/driver) were seeded directly against the live Atlas database this session
@@ -144,10 +140,10 @@ D-014. Lint 0/0, tests 164/164, no regressions.
 - **Remaining Layer 1 code work:** none blocking — rest of Layer 1 is hosted-account creation + env wiring.
 
 ## Open items
-- ~~P-006: `/api/*` hangs on a stale Render→Upstash Redis connection~~ — fixed via localized
-  `withRedisTimeout` wrapper, verified locally against real Upstash + Atlas. **Needs a live-deploy
-  verification pass** (push, watch Render deploy log, re-hit `/health` + `/api/auth/login-phone` live)
-  before it's fully closed out.
+- **P-006 (ACTIVE, top priority):** `/api/*` can hang indefinitely on a stale Render→Upstash Redis
+  connection. Reverted a first fix attempt that caused a worse boot crash-loop. Root cause, what was tried,
+  and the exact next steps are fully written up in `DECISIONS.md`'s P-006 entry — read it before touching
+  `backend/config/redis.js`, `middleware/security.js`, or `sessionManager.js` again.
 - ~~P-002: demo-account login 401s against Atlas~~ — resolved, accounts seeded directly on Atlas.
 - Layer 1 hosting free-tier limits confirmed live in practice (Render cold-start behavior, Atlas M0, Upstash
   free tier) — no surprises hit so far.
@@ -208,16 +204,22 @@ D-014. Lint 0/0, tests 164/164, no regressions.
 - D-013 — Layer 3 acceptance gate results (REST/WS/circuit-breaker numbers).
 - D-014 — Layer 4: prom-client `/metrics` (default + 3 custom metrics) + AsyncLocalStorage correlation IDs.
 - D-015 — Grafana Cloud dashboard fed by a local, on-demand Grafana Alloy scraper (verified end-to-end).
-- P-006 — `/api/*` hung on a stale Redis connection; a first fix caused a worse boot crash-loop and was
-  reverted (commit `823cfc3`). **Resolved** via a localized `withRedisTimeout` wrapper — see the "P-006 fix"
-  entry in `DECISIONS.md`.
+- P-006 — **ACTIVE.** `/api/*` hangs on a stale Redis connection; a first fix caused a worse boot crash-loop
+  and was reverted (commit `823cfc3`). Root cause + exact next steps in `DECISIONS.md`.
 
 ## How to resume
-1. Read this file, then `CLAUDE.md`, then `DECISIONS.md`'s **"P-006 fix"** entry.
-2. If not already done: push the `withRedisTimeout` fix to main, watch the live Render deploy log (not just
-   GitHub Actions/the deploy-hook status) for a clean boot, then re-hit `/health` and
-   `/api/auth/login-phone` against the live URL to confirm the fix holds under real production conditions
-   (not just the local-against-real-Upstash verification already done this session).
-3. Once P-006 is confirmed fixed live: resume **Layer 5 — README-as-paper & defense** (pending approval, not
-   yet started). Build only that layer, run its gate, update this file + `DECISIONS.md`, then STOP and ask
-   for approval before anything further.
+1. Read this file, then `CLAUDE.md`, then `DECISIONS.md`'s **P-006** entry — that's the active incident and
+   takes priority over everything else, including Layer 5.
+2. **First**, verify the revert actually deployed cleanly: check the live Render deploy log (not just
+   GitHub Actions/the deploy-hook status — that only confirms the hook fired) for a clean boot with no
+   `Unhandled Promise Rejection` and no repeated `Exited with status 1`. Then re-test `/health` and
+   `/api/auth/login-phone` against the live URL.
+3. Once confirmed stable (even if still occasionally hanging on stale Redis — that's the known, pre-existing
+   P-006 bug, not new), re-derive the localized-timeout fix described in P-006 (wrap only
+   `middleware/security.js`'s `sendCommand` and `sessionManager.js`'s private storage methods — never the
+   shared Redis client's own options, never anything the Socket.IO adapter touches at boot). Diagnose the
+   `sessionManager-redis.test.js` failure that stopped the previous attempt before it's considered done.
+   Test locally against real Upstash before pushing to main.
+4. Only after P-006 is genuinely fixed and verified live: resume **Layer 5 — README-as-paper & defense**
+   (pending approval, not yet started). Build only that layer, run its gate, update this file + `DECISIONS.md`,
+   then STOP and ask for approval before anything further.
