@@ -206,14 +206,6 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  failedLoginAttempts: {
-    type: Number,
-    default: 0
-  },
-  lockUntil: {
-    type: Date,
-    default: null
-  },
 
   // Audit fields
   lastLogin: {
@@ -314,33 +306,6 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
   } catch (error) {
     throw new Error('Password comparison failed');
   }
-};
-
-// Instance method to check account lockout status
-userSchema.methods.isLocked = function () {
-  return !!(this.lockUntil && this.lockUntil > Date.now());
-};
-
-// Static: record a failed login attempt, locking the account once maxLoginAttempts
-// is reached. Uses updateOne (not .save()) so it doesn't run the password-hash /
-// PII-encryption pre-save hooks for an update that touches neither field.
-userSchema.statics.recordFailedLogin = async function (userId) {
-  const { auth } = require('../config/security');
-  const user = await this.findById(userId).select('failedLoginAttempts lockUntil');
-  const attempts = (user.failedLoginAttempts || 0) + 1;
-  const update = { failedLoginAttempts: attempts };
-
-  if (attempts >= auth.maxLoginAttempts) {
-    update.lockUntil = new Date(Date.now() + auth.accountLockoutMinutes * 60 * 1000);
-  }
-
-  await this.updateOne({ _id: userId }, { $set: update });
-  return update.lockUntil || null;
-};
-
-// Static: clear failed-attempt counter on a successful login
-userSchema.statics.resetFailedLogins = async function (userId) {
-  await this.updateOne({ _id: userId }, { $set: { failedLoginAttempts: 0, lockUntil: null } });
 };
 
 // Instance method to update driver location

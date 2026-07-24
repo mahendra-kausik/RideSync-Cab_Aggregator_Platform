@@ -2,6 +2,7 @@ const { User, OTP } = require('../models');
 const AuthUtils = require('../utils/auth');
 const sessionManager = require('../utils/sessionManager');
 const securityLogger = require('../utils/securityLogger');
+const loginLockout = require('../utils/loginLockout');
 const Joi = require('joi');
 
 /**
@@ -412,8 +413,8 @@ const loginEmail = async (req, res) => {
       });
     }
 
-    // Check account lockout (brute-force protection)
-    if (user.isLocked()) {
+    // Check account lockout (IP+account-scoped brute-force protection)
+    if (await loginLockout.isLocked(req.ip, email)) {
       await securityLogger.logAuthEvent('ACCOUNT_LOCKED', {
         userId: user._id,
         email,
@@ -434,14 +435,14 @@ const loginEmail = async (req, res) => {
     // Verify password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
-      const lockUntil = await User.recordFailedLogin(user._id);
+      const locked = await loginLockout.recordFailedLogin(req.ip, email);
 
       // Log failed password attempt
       await securityLogger.logAuthEvent('LOGIN_FAILED', {
         userId: user._id,
         email,
         reason: 'invalid_password',
-        locked: !!lockUntil,
+        locked,
         ip: req.ip,
         userAgent: req.get('User-Agent')
       });
@@ -456,9 +457,7 @@ const loginEmail = async (req, res) => {
       });
     }
 
-    if (user.failedLoginAttempts > 0) {
-      await User.resetFailedLogins(user._id);
-    }
+    await loginLockout.resetFailedLogins(req.ip, email);
 
     // Create secure session
     const deviceInfo = req.get('User-Agent') || 'unknown';
@@ -582,8 +581,8 @@ const loginPhone = async (req, res) => {
       });
     }
 
-    // Check account lockout (brute-force protection)
-    if (user.isLocked()) {
+    // Check account lockout (IP+account-scoped brute-force protection)
+    if (await loginLockout.isLocked(req.ip, phone)) {
       await securityLogger.logAuthEvent('ACCOUNT_LOCKED', {
         userId: user._id,
         phone,
@@ -604,14 +603,14 @@ const loginPhone = async (req, res) => {
     // Verify password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
-      const lockUntil = await User.recordFailedLogin(user._id);
+      const locked = await loginLockout.recordFailedLogin(req.ip, phone);
 
       // Log failed password attempt
       await securityLogger.logAuthEvent('LOGIN_FAILED', {
         userId: user._id,
         phone,
         reason: 'invalid_password',
-        locked: !!lockUntil,
+        locked,
         ip: req.ip,
         userAgent: req.get('User-Agent')
       });
@@ -626,9 +625,7 @@ const loginPhone = async (req, res) => {
       });
     }
 
-    if (user.failedLoginAttempts > 0) {
-      await User.resetFailedLogins(user._id);
-    }
+    await loginLockout.resetFailedLogins(req.ip, phone);
 
     // Create secure session
     const deviceInfo = req.get('User-Agent') || 'unknown';

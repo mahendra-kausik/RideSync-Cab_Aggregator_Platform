@@ -996,3 +996,39 @@
   (no admin-unlock endpoint); acceptable for a portfolio project, would need one for real production use.
 - **Verification:** `npm test` — full suite green. Manually traced both login paths for the lock-check /
   fail-increment / success-reset order.
+
+## P-008 — follow-up: account-scoped lockout let one attacker deny service to the real user
+- **Date / Layer:** 2026-07-24 / post-Layer-4 audit
+- **Context:** The account-scoped lockout above has a real flaw: because the counter lives on the `User`
+  document (keyed by account only), anyone who knows a target's email/phone can lock that account for
+  everyone — including the legitimate owner — just by submitting 5 wrong passwords, no actual password
+  guessing needed. Discussed with the user; decided the distributed-attack case (many IPs targeting one
+  account) isn't worth defending against for a portfolio project, but denying the real user via one
+  attacker's failed attempts was worth fixing.
+- **Decision:** Replaced the account-scoped lock with an **IP+account-scoped** lock: the counter key is
+  `ip:hash(identifier)`, not just the account. Moved storage off the `User` document entirely into a new
+  `utils/loginLockout.js`, reusing the fixed-window INCR/PEXPIRE/PTTL pattern from `redisRateLimitStore.js`
+  (Redis-backed, with an in-memory `Map` fallback when `REDIS_URL` is unset, same story as the rate limiter).
+  Removed the `failedLoginAttempts`/`lockUntil` fields and `isLocked()`/`recordFailedLogin()`/
+  `resetFailedLogins()` statics added on `User` moments earlier — nothing else referenced them yet, so the
+  removal is clean. The identifier (email/phone) is hashed via the same `encryptionUtils.hashData` used for
+  `email_hash`/`phone_hash` lookups, so no plaintext PII ends up in Redis keys. On lockout, the TTL is
+  (re-)armed to a full `accountLockoutMinutes` window at the moment the 5th attempt lands, not from the
+  1st attempt, so "locked for 15 minutes" means 15 minutes from the lockout, not from the first typo.
+- **Why:** IP+account scoping means an attacker locks themselves out of guessing *that* account from *their*
+  IP, but the real user on a different IP/device can still log in with the correct password immediately —
+  directly fixes the denial-of-service gap without reintroducing the distributed-attack weakness of pure
+  per-IP locking (which would lock out an entire office/NAT behind a shared IP from every account, not just
+  the targeted one).
+- **Alternatives considered:** Pure per-IP lockout (key = IP only) — rejected: locks out every account behind
+  that IP, not just the targeted one, worse collateral damage for a single-IP home/office network. CAPTCHA
+  after N failures — rejected as scope creep (new frontend dependency) for a fix the user asked to keep small.
+- **Tradeoffs / risks:** Still vulnerable to a distributed attack (many IPs, one account) — explicitly
+  accepted as out of scope per the user's direction ("no real attacker would actually break into my portfolio
+  project"). In-memory fallback (no `REDIS_URL`) resets the counter on every restart/redeploy — same
+  already-accepted caveat as the rate limiter.
+- **Verification:** New `__tests__/unit/loginLockout.test.js` (4 cases: stays unlocked under threshold, locks
+  on the 5th attempt, a different IP against the same account is unaffected, reset clears the lock) — all
+  pass against the in-memory fallback path (no `REDIS_URL` in the test env). `npm run lint` clean, full suite
+  173/173 (169 previous + 4 new).
+- **Supersedes:** the account-scoped design in the P-008 entry above.
