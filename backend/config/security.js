@@ -13,6 +13,7 @@ const securityConfig = {
     otpLength: 6,
     otpExpiryMinutes: 5,
     maxOtpAttempts: 3,
+    maxLoginAttempts: 5,
     accountLockoutMinutes: 15
   },
 

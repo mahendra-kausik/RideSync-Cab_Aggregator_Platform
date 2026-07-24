@@ -228,78 +228,6 @@ const tokenRotationMiddleware = async (req, res, next) => {
 };
 
 /**
- * Session hijacking detection
- */
-const sessionHijackingDetection = (req, res, next) => {
-  if (req.user && req.session) {
-    const currentFingerprint = {
-      userAgent: req.get('User-Agent'),
-      acceptLanguage: req.get('Accept-Language'),
-      acceptEncoding: req.get('Accept-Encoding')
-    };
-
-    const storedFingerprint = req.session.fingerprint;
-
-    if (storedFingerprint) {
-      // Check if fingerprint has changed significantly
-      const fingerprintChanged =
-        storedFingerprint.userAgent !== currentFingerprint.userAgent ||
-        storedFingerprint.acceptLanguage !== currentFingerprint.acceptLanguage;
-
-      if (fingerprintChanged) {
-        securityLogger.logSecurityEvent('POTENTIAL_SESSION_HIJACK', {
-          userId: req.user.userId,
-          sessionId: req.user.sessionId,
-          oldFingerprint: storedFingerprint,
-          newFingerprint: currentFingerprint,
-          ip: req.ip
-        });
-
-        // Invalidate session and require re-authentication
-        sessionManager.invalidateSession(req.user.sessionId);
-
-        throw new AppError(
-          'Session security violation detected',
-          401,
-          'SESSION_HIJACK_DETECTED'
-        );
-      }
-    } else {
-      // Store fingerprint for new session
-      req.session.fingerprint = currentFingerprint;
-    }
-  }
-
-  next();
-};
-
-/**
- * Brute force protection with progressive delays
- */
-const bruteForceProtection = (req, res, next) => {
-  const key = `bf_${req.ip}_${req.path}`;
-  const attempts = req.session[key] || 0;
-
-  if (attempts > 0) {
-    // Progressive delay: 1s, 2s, 4s, 8s, etc.
-    const delay = Math.min(Math.pow(2, attempts - 1) * 1000, 30000); // Max 30s
-
-    setTimeout(() => {
-      next();
-    }, delay);
-
-    securityLogger.logSecurityEvent('BRUTE_FORCE_DELAY', {
-      ip: req.ip,
-      path: req.path,
-      attempts,
-      delay
-    });
-  } else {
-    next();
-  }
-};
-
-/**
  * API abuse detection
  */
 const apiAbuseDetection = (req, res, next) => {
@@ -454,8 +382,6 @@ module.exports = {
   comprehensiveSecurityHeaders,
   advancedInputValidation,
   tokenRotationMiddleware,
-  sessionHijackingDetection,
-  bruteForceProtection,
   apiAbuseDetection,
   secureFileUpload,
   geographicAccessControl

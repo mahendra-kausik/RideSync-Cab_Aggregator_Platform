@@ -9,7 +9,7 @@ A comprehensive ride-hailing platform (similar to Ola/Uber) featuring real-time 
 - **Real-time Ride Booking:** Instant ride requests with fare estimation
 - **Smart Driver Matching:** Geospatial algorithm matches nearest available drivers
 - **Secure Authentication:** Phone/email-based login with OTP verification and JWT tokens
-- **Payment Integration:** Payment processing with webhook support
+- **Payment Simulation:** Mock and cash payment flows (no live payment gateway)
 - **Live Tracking:** WebSocket-based real-time location updates
 - **Security First:** Rate limiting, CORS, CSP, input sanitization, PII encryption
 - **Admin Dashboard:** Comprehensive analytics and user management

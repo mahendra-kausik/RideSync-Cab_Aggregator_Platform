@@ -412,14 +412,36 @@ const loginEmail = async (req, res) => {
       });
     }
 
+    // Check account lockout (brute-force protection)
+    if (user.isLocked()) {
+      await securityLogger.logAuthEvent('ACCOUNT_LOCKED', {
+        userId: user._id,
+        email,
+        ip: req.ip,
+        userAgent: req.get('User-Agent')
+      });
+
+      return res.status(423).json({
+        success: false,
+        error: {
+          code: 'ACCOUNT_LOCKED',
+          message: 'Too many failed login attempts. Try again later.',
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+
     // Verify password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
+      const lockUntil = await User.recordFailedLogin(user._id);
+
       // Log failed password attempt
       await securityLogger.logAuthEvent('LOGIN_FAILED', {
         userId: user._id,
         email,
         reason: 'invalid_password',
+        locked: !!lockUntil,
         ip: req.ip,
         userAgent: req.get('User-Agent')
       });
@@ -432,6 +454,10 @@ const loginEmail = async (req, res) => {
           timestamp: new Date().toISOString()
         }
       });
+    }
+
+    if (user.failedLoginAttempts > 0) {
+      await User.resetFailedLogins(user._id);
     }
 
     // Create secure session
@@ -556,14 +582,36 @@ const loginPhone = async (req, res) => {
       });
     }
 
+    // Check account lockout (brute-force protection)
+    if (user.isLocked()) {
+      await securityLogger.logAuthEvent('ACCOUNT_LOCKED', {
+        userId: user._id,
+        phone,
+        ip: req.ip,
+        userAgent: req.get('User-Agent')
+      });
+
+      return res.status(423).json({
+        success: false,
+        error: {
+          code: 'ACCOUNT_LOCKED',
+          message: 'Too many failed login attempts. Try again later.',
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+
     // Verify password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
+      const lockUntil = await User.recordFailedLogin(user._id);
+
       // Log failed password attempt
       await securityLogger.logAuthEvent('LOGIN_FAILED', {
         userId: user._id,
         phone,
         reason: 'invalid_password',
+        locked: !!lockUntil,
         ip: req.ip,
         userAgent: req.get('User-Agent')
       });
@@ -576,6 +624,10 @@ const loginPhone = async (req, res) => {
           timestamp: new Date().toISOString()
         }
       });
+    }
+
+    if (user.failedLoginAttempts > 0) {
+      await User.resetFailedLogins(user._id);
     }
 
     // Create secure session

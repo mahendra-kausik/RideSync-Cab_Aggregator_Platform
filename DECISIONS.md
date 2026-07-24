@@ -967,3 +967,32 @@
 - **Verification:** Ran locally against the live Render `/metrics`; confirmed via Alloy's own
   `prometheus_remote_storage_samples_total`/`..._failed_total` metrics (732 sent, 0 failed) and cross-checked
   in Grafana Cloud's Explore view.
+
+## P-008 — README-advertised brute-force account lockout was dead code, not a working feature
+- **Date / Layer:** 2026-07-24 / post-Layer-4 audit
+- **Context:** Full-codebase audit for P-007-style "looks wired up, silently isn't" bugs (prompted by finding
+  PII encryption had never persisted — see P-007). Found `middleware/advancedSecurity.js` exported
+  `bruteForceProtection` and `sessionHijackingDetection`, but `server.js` only imported the other 5 exports
+  from that module — neither function was ever mounted on any route, anywhere. Separately, `authController.js`'s
+  `loginEmail`/`loginPhone` never tracked failed attempts per account at all; `config/security.js`'s
+  `accountLockoutMinutes: 15` was read by zero files. Net effect: an attacker could brute-force one specific
+  known account's password without limit, since the only guard (`strictAuthRateLimiter`) keys on IP+User-Agent,
+  not the account, and is trivially bypassed by rotating either.
+- **Action:** Deleted `bruteForceProtection`/`sessionHijackingDetection` outright rather than mounting them —
+  both read/write `req.session`, which doesn't exist anywhere in this app (JWT-only, no `express-session`
+  middleware); mounting either as-is would throw on the first authenticated request. `bruteForceProtection`
+  also never incremented its own counter, so it wouldn't have worked even with a session store. Replaced with
+  real per-account lockout: `User` schema gained `failedLoginAttempts`/`lockUntil` fields plus
+  `isLocked()`/`recordFailedLogin()`/`resetFailedLogins()`; both login controllers now check `isLocked()`
+  before verifying the password (423 `ACCOUNT_LOCKED` if locked), call `recordFailedLogin` on a wrong
+  password (locks for `accountLockoutMinutes` after `maxLoginAttempts`, a new config value, added at 5),
+  and reset the counter on a successful login. Added `config/security.js`'s `maxLoginAttempts: 5`.
+- **Why:** The session-based design in the dead code didn't match this app's stateless-JWT architecture — an
+  account-level counter on the `User` document is the correct shape here and is genuinely account-scoped
+  (immune to the IP/User-Agent rotation that defeats the existing rate limiter).
+- **Tradeoffs / risks:** `recordFailedLogin`/`resetFailedLogins` use `updateOne` instead of `.save()` so they
+  don't trigger the password-hash/PII-encryption pre-save hooks for an update touching neither field — same
+  pattern already used elsewhere in this model. A locked account can't self-recover before the timeout expires
+  (no admin-unlock endpoint); acceptable for a portfolio project, would need one for real production use.
+- **Verification:** `npm test` — full suite green. Manually traced both login paths for the lock-check /
+  fail-increment / success-reset order.
