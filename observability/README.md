@@ -43,3 +43,11 @@ Then **Dashboards → New → New dashboard**, add panels:
   or table panel.
 
 Save the dashboard, then **Share → Public dashboard** (or a snapshot) for a link to drop in the README.
+
+## Live dashboard
+
+Built and public: https://scarletmeerkat3462.grafana.net/public-dashboards/7a50287abc8e4c8c930568ff8b455530
+
+4 panels: Request Latency (p50/p95/p99), Request Rate, 5xx Error Rate, Circuit Breaker State
+(value-mapped 0=CLOSED/1=HALF_OPEN/2=OPEN, color scheme set to Single color so mappings win over
+default thresholds).

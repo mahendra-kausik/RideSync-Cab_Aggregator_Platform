@@ -132,6 +132,13 @@ the current 173/173 baseline.
             metrics (732 samples sent, 0 failed) and cross-checked in Grafana Cloud Explore. Dashboard panels
             (p50/p95/p99 latency, request rate, error rate, circuit-breaker state) are documented with exact
             PromQL in `observability/README.md`, ready to build before Layer 5's README screenshots.
+      - [x] **Dashboard built and public:** 4 panels (latency p50/p95/p99, request rate, 5xx error rate,
+            circuit breaker state) built in Grafana Cloud, all showing live data from the Render deploy.
+            Public link: https://scarletmeerkat3462.grafana.net/public-dashboards/7a50287abc8e4c8c930568ff8b455530
+            (see `observability/README.md`). One snag: State timeline's default Color scheme uses
+            thresholds (a stray default step at 80) ahead of value mappings — fixed by setting Color scheme
+            to "Single color" so the 0/1/2 → CLOSED/HALF_OPEN/OPEN mappings render correctly.
+            **Layer 4 fully closed — no more manual follow-up.**
 
 **Post-Layer-4 hardening pass (P-008 → P-011, 2026-07-24)** — found and fixed while auditing for more
 P-007-style "looks wired up, silently isn't" bugs:
