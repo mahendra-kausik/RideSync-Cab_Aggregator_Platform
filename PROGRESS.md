@@ -154,7 +154,18 @@ P-007-style "looks wired up, silently isn't" bugs:
 - Demo identities renamed (`demoRider1`/`demoDriver1`) and migrated live on Atlas via
   `scripts/reset-demo-accounts.js`; documented in `README.md` (P-011 follow-up).
 - Current test baseline: backend **173/173**, frontend **59/59** (up from 164/59 at Layer 4).
-- [ ] Layer 5 — README-as-paper & resume bullets.
+- [x] **Layer 5 — README-as-paper & defense.** `README.md` rewritten from the pre-upgrade
+      "student" version into the project paper: live links (UI/API/Grafana) + rider/driver demo
+      creds up top (admin dropped per griefing-reduction call), deployed-state ASCII architecture
+      diagram, a "what makes it production-shaped" section (deployed / horizontally scalable /
+      load-tested / observable / hardened) each pointing at its evidence, the `load/README.md`
+      results table, corrected tech stack (Leaflet/OSM not Mapbox; added ioredis, prom-client, k6),
+      and an honest-caveats section (local-not-live load tests, per-instance breaker, no key
+      rotation, mock payments, ephemeral audit logs). **All numbers re-verified this session:**
+      backend **173/173**, frontend **59/59**, live UI/API/`/metrics`/Grafana all 200. The stale
+      "578 tests / 71.76% coverage" claim was removed — the real curated suite is 173 tests and
+      measured statement coverage is ~32% (D-016); README states test counts only, no coverage %.
+      Rate-limit values in the security section corrected to the real config (auth 20/5min, etc.).
 
 ## Deployed system — quick reference (fill in as layers ship)
 - **Live UI:** https://ride-sync-cab-aggregator-platform-f.vercel.app
@@ -234,6 +245,8 @@ P-007-style "looks wired up, silently isn't" bugs:
 - D-013 — Layer 3 acceptance gate results (REST/WS/circuit-breaker numbers).
 - D-014 — Layer 4: prom-client `/metrics` (default + 3 custom metrics) + AsyncLocalStorage correlation IDs.
 - D-015 — Grafana Cloud dashboard fed by a local, on-demand Grafana Alloy scraper (verified end-to-end).
+- D-016 — Layer 5 README-as-paper: corrected stale 578/71.76% test claim to verified 173/173 + 59/59
+  (coverage % omitted per user), fixed stack (Leaflet/OSM not Mapbox) and rate-limit values, dropped admin creds.
 - P-006 — **RESOLVED.** Seven entries in `DECISIONS.md`. Application-level bug (indefinite hang) fixed via
   two crash-loop-regression reverts (`823cfc3`, `29b0e60`), a library-internal retry loop fixed by dropping
   `rate-limit-redis` for a first-party store (`499a47a`), reconnect pacing tuned (`a91f27f`). The actual

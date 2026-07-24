@@ -1148,3 +1148,27 @@
   for a decision on whether to remove it.
 - **Verification:** `User.findByPhone('1234567890').comparePassword('demoRider123')` and the driver
   equivalent both returned `true` against the live Atlas data. `npm run lint` clean, full suite 173/173.
+
+## D-016 — Layer 5 README-as-paper: corrected test/coverage claims and framing
+- **Date / Layer:** 2026-07-24 / Layer 5
+- **Context:** The pre-upgrade `README.md` claimed "578 tests / 71.76% coverage" and listed Mapbox as the
+  map provider, PCI-DSS/OWASP compliance, and session-hijacking detection — all inherited from an earlier
+  state of the project and no longer true. Layer 5's gate is that every number in the README traces to a
+  results file or a decision entry.
+- **Decision:** Rewrote the README as the project "paper". Re-measured everything this session:
+  backend **173/173** tests (11 suites), frontend **59/59**, live UI/API/`/metrics`/Grafana all HTTP 200.
+  Replaced the 578/71.76% claim with the verified test counts and **omitted a coverage percentage
+  entirely** (user's call). Corrected the stack (Leaflet/OSM, not Mapbox — the `mapbox-gl` dep is present
+  but unused after the Layer-1 MapComponent fix), dropped the unverifiable PCI-DSS/OWASP/session-hijacking
+  claims, and fixed the rate-limit values to the real config (auth 20/5min, OTP 3/5min, API 100/15min,
+  ride-booking 5/min). Admin demo creds dropped from the README (rider/driver only) for griefing reduction.
+- **Why:** Measured statement coverage is now ~31.6% (the curated 173-test suite genuinely exercises about
+  a third of the app; infra files like `logger.js`/`securityValidator.js`/`requestContext.js` have no unit
+  tests). Publishing a real-but-unflattering 32% next to the old inflated 71.76% would read worse than
+  stating the honest, defensible test counts and leaving coverage out — so the README states counts only.
+- **Alternatives considered:** (a) State 31.59% honestly — most transparent but foregrounds a number lower
+  than the stale claim, on a resume doc. (b) Keep 578 as "historical" — rejected: not defensible in an
+  interview when the suite is 173. (c) Counts + a coverage caveat — viable, but the user chose counts-only.
+- **Tradeoffs / risks:** Omitting coverage invites the interview question "what's your coverage?"; the honest
+  answer (~32%, concentrated on auth/fare/matching/lockout core logic) is defensible and is recorded here.
+- **Supersedes:** the README's prior test/coverage/stack claims (no prior D-entry).
