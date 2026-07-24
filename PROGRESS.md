@@ -5,19 +5,18 @@
 > lives in `DECISIONS.md`; headline numbers + architecture live in `README.md`.
 
 ## Current status
-**⚠️ ACTIVE INCIDENT — READ THIS FIRST (P-006 in DECISIONS.md, both entries).** `/api/*` routes on the live
-Render app can hang indefinitely when its Redis connection to Upstash goes stale. **Two fix attempts have
-now crash-looped production and both were reverted** — live state is back to the original hang-but-doesn't-
-crash baseline (commit `29b0e60`, pushed). Attempt 1: a global `commandTimeout` on the shared client (bounded
-Socket.IO adapter boot commands too). Attempt 2: a localized `withRedisTimeout` wrapper around only
-request-time call sites — still crashed, because `rate-limit-redis`'s `RedisStore` constructor fires an
-eager, unawaited, uncaught `SCRIPT LOAD` command through that same `sendCommand` function at boot; giving it
-a rejection path (the timeout) instead of its previous patient-wait behavior turned it into an unhandled
-rejection. A concrete third approach (exclude `SCRIPT` commands from the timeout wrap, only bound
-`EVALSHA`/`DECR`/`DEL`) is written up in P-006's second entry, **not yet attempted**. Next session: read
-both P-006 entries in full before touching `middleware/security.js`, `sessionManager.js`, or
-`config/redis.js` again, and find a way to exercise the boot connection-churn window in local testing
-before pushing to main a third time.
+**⚠️ ACTIVE INCIDENT — READ THIS FIRST (P-006 in DECISIONS.md, all three entries).** `/api/*` routes on the
+live Render app can hang indefinitely when its Redis connection to Upstash goes stale. **Two fix attempts
+already crash-looped production and were reverted** (attempt 1: global `commandTimeout`; attempt 2: a
+`withRedisTimeout` wrapper that unintentionally bounded `rate-limit-redis`'s eager, unawaited, boot-time
+`SCRIPT LOAD` call, turning its previously-patient wait into an unhandled rejection). **Attempt 3 is now
+implemented and about to be pushed:** same `withRedisTimeout` wrapper, but the rate limiter's `sendCommand`
+now excludes the `SCRIPT` command from the timeout entirely (passes through unwrapped, exact pre-fix
+behavior), only bounding the real per-request `EVALSHA`/`DECR`/`DEL` commands. Verified: lint 0/0, tests
+166/166, 4 separate local boots against real Upstash + Atlas (1 initial + 3 rapid back-to-back cycles) all
+clean with no unhandled rejections, demo rider login succeeded. Local boots don't naturally reproduce
+Upstash's `ECONNRESET` churn though, so **the live Render deploy log is still the decisive check** — read
+DECISIONS.md's third P-006 entry, then watch the deploy log after pushing before declaring this closed.
 
 **Layer 1 shipped — app is live on a public URL.** Demo-account login 401 (P-002) is now **resolved** — all
 three demo accounts (admin/rider/driver) were seeded directly against the live Atlas database this session

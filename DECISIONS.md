@@ -680,6 +680,39 @@
   the boot-churn window (not just a clean, already-stable local start) before it's pushed to main again —
   the local verification gap above is the thing to close first.
 
+## P-006 — third attempt: exclude `SCRIPT` from the timeout wrap (implemented, pending live verification)
+- **Date / Layer:** 2026-07-24 / P-006 follow-up #3
+- **Context:** Implemented the fix identified at the end of the second attempt above. Re-created
+  `backend/utils/withRedisTimeout.js` (unchanged from before) and re-applied it to `sessionManager.js`'s 8
+  private storage methods (unchanged — those were never implicated in either crash, since every call there
+  is made on-demand inside an already-`await`ed request-handling chain, never fired eagerly/unawaited at
+  construction). The rate limiter's `sendCommand` (`middleware/security.js`) now special-cases the `SCRIPT`
+  command: `args[0] === 'SCRIPT'` (matches exactly `rate-limit-redis`'s `["SCRIPT", "LOAD", ...]` calls, used
+  by both `RedisStore`'s constructor and its NOSCRIPT-retry path) passes straight through to
+  `redisClient.call(...args)`, unwrapped — restoring the exact patient-wait-on-reconnect behavior that
+  existed before any P-006 fix (safe because of `maxRetriesPerRequest: null`, P-005). Every other command
+  (`EVALSHA`/`DECR`/`DEL`) gets `withRedisTimeout`.
+- **Why this is different from attempt 2:** Attempt 2 gave the boot-time-eager, unawaited `SCRIPT LOAD`
+  promise a rejection path it never had — that's what crashed it. This attempt never touches that promise's
+  ability to reject at all; it's excluded from the timeout entirely, so it behaves exactly as it did in
+  production before this session started (safe, proven, just occasionally slow under stale-connection churn
+  — a narrow, pre-existing, accepted tradeoff, not a new risk).
+- **Verification done before pushing:** `npm run lint` 0/0; `npm test` 166/166 (164 existing + 2
+  `withRedisTimeout.test.js`). Locally against real Upstash + Atlas: single boot showed a clean log (no
+  unhandled rejection); **3 additional rapid back-to-back boot/kill cycles** run specifically to exercise the
+  connection-opening burst repeatedly — all 3 clean, no unhandled rejection, no exit-1. Demo rider login
+  (`+1234567890`/`rider123`) succeeded (200, ~2.8s) and `GET /api` (which only exercises the rate limiter,
+  not `sessionManager`) succeeded (200, ~215ms) against the locally-running server.
+- **Known local-verification limit:** local network conditions don't naturally reproduce Upstash's
+  `ECONNRESET` churn (no `❌ Redis ... error` lines appeared in any of the 4 local boots, unlike every real
+  Render boot log seen this session) — repeated boot cycles are the closest available local proxy for
+  "exercise the connection-opening burst," not a guaranteed reproduction of the exact race. The strongest
+  evidence for this fix is the source-level one: `SCRIPT` is now provably excluded from ever rejecting via
+  this wrapper, which was the entire, specific mechanism of the attempt-2 crash — not a probabilistic
+  mitigation.
+- **Status:** implemented, verified as above, about to be pushed. Live Render deploy-log verification (clean
+  boot with the real `ECONNRESET` churn Render always shows) is the remaining, decisive check.
+
 ---
 
 ## D-015 — Grafana Cloud dashboard fed by a local, on-demand Grafana Alloy scraper

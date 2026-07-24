@@ -3,6 +3,7 @@ const { RedisStore } = require('rate-limit-redis');
 const helmet = require('helmet');
 const { AppError } = require('./errorHandler');
 const redisClient = require('../config/redis');
+const { withRedisTimeout, REDIS_CMD_TIMEOUT_MS } = require('../utils/withRedisTimeout');
 
 /**
  * Comprehensive Security Middleware
@@ -89,8 +90,25 @@ const createAdvancedRateLimiter = (name, options) => {
     // isolated per limiter, but one shared Redis keyspace is not, so without
     // a per-limiter prefix two limiters with the same default keyGenerator
     // (IP+User-Agent) would double-count the same request against one key.
+    // ponytail: fail-fast (P-006) — a stale Redis connection rejects within
+    // REDIS_CMD_TIMEOUT_MS instead of hanging forever, which express-rate-limit v6
+    // turns into a 500 (not fail-open; passOnStoreError fail-open is v7-only).
+    // SCRIPT is excluded: rate-limit-redis's RedisStore constructor fires SCRIPT
+    // LOAD eagerly and unawaited at boot through this same sendCommand — timing
+    // that out turns a patient reconnect-wait into an unhandled rejection and
+    // crash-loops the app (see DECISIONS.md's second P-006 entry). Only the
+    // per-request EVALSHA/DECR/DEL commands (always awaited in a caught chain) get
+    // the timeout.
     store: redisClient
-      ? new RedisStore({ sendCommand: (...args) => redisClient.call(...args), prefix: `rl:${name}:` })
+      ? new RedisStore({
+        sendCommand: (...args) => {
+          const isBootTimeScriptLoad = args[0] === 'SCRIPT';
+          return isBootTimeScriptLoad
+            ? redisClient.call(...args)
+            : withRedisTimeout(redisClient.call(...args), REDIS_CMD_TIMEOUT_MS, 'rate-limit');
+        },
+        prefix: `rl:${name}:`
+      })
       : undefined,
     message: {
       success: false,
