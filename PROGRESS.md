@@ -274,11 +274,12 @@ P-007-style "looks wired up, silently isn't" bugs:
   `scripts/reset-demo-accounts.js`; documented in `README.md`. Found (not removed) a stray 4th Atlas account.
 
 ## Open items
-- P-009: live re-verification pending — confirm distinct client IPs for two different devices in Render's
-  logs after the `trust proxy` fix's next deploy.
-- Stray Atlas account: a 4th `users` document beyond admin/rider/driver (phone `4444444444`, name `"User"`,
-  the schema default) — almost certainly a throwaway manual test registration from the P-008/P-009 live
-  testing session, not seed data. Left alone pending the user's call on whether to delete it.
+- ~~P-009: live re-verification~~ — **resolved**: confirmed live from two different devices; `trust proxy`
+  fix works (distinct client IPs, IP+account lockout genuinely IP-scoped in production).
+- ~~Stray Atlas account (phone `4444444444`)~~ — **resolved**: deleted from Atlas by the user. Live `users`
+  collection is back to admin/rider/driver only.
+
+_No open items — all build layers (0–5) shipped and gated._
 
 ## How to resume
 1. Read this file, then `CLAUDE.md`. P-006 is closed — no action needed there. The post-Layer-4 hardening
