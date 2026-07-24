@@ -14,7 +14,7 @@ describe('System Workflow - Rider Journey', () => {
     });
 
     it('should complete full rider workflow successfully', async () => {
-        const phone = '+15551112222';
+        const phone = '5551112222';
 
         // 1. Register phone (request OTP)
         const registerRes = await request(app)

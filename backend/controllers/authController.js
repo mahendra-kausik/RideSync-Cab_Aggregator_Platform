@@ -13,10 +13,10 @@ const Joi = require('joi');
 // Validation schemas
 const phoneRegistrationSchema = Joi.object({
   phone: Joi.string()
-    .pattern(/^\+?[1-9]\d{1,14}$/)
+    .pattern(/^\d{10}$/)
     .required()
     .messages({
-      'string.pattern.base': 'Invalid phone number format. Use E.164 format.',
+      'string.pattern.base': 'Phone number must be exactly 10 digits, no country code or symbols.',
       'any.required': 'Phone number is required'
     }),
   profile: Joi.object({
@@ -24,10 +24,12 @@ const phoneRegistrationSchema = Joi.object({
       .min(2)
       .max(100)
       .trim()
+      .pattern(/^[a-zA-Z\s'.-]+$/)
       .required()
       .messages({
         'string.min': 'Name must be at least 2 characters long',
         'string.max': 'Name cannot exceed 100 characters',
+        'string.pattern.base': 'Name can only contain letters, spaces, apostrophes, periods, and hyphens',
         'any.required': 'Name is required'
       }),
     avatar: Joi.string().uri().optional()
@@ -42,12 +44,24 @@ const phoneRegistrationSchema = Joi.object({
   driverInfo: Joi.when('role', {
     is: 'driver',
     then: Joi.object({
-      licenseNumber: Joi.string().required().min(5).max(20).trim(),
+      licenseNumber: Joi.string()
+        .required()
+        .min(5)
+        .max(20)
+        .trim()
+        .pattern(/^[a-zA-Z0-9-]+$/)
+        .messages({
+          'string.pattern.base': 'License number can only contain letters, numbers, and hyphens'
+        }),
       vehicleDetails: Joi.object({
-        make: Joi.string().required().max(30).trim(),
-        model: Joi.string().required().max(30).trim(),
-        plateNumber: Joi.string().required().max(15).trim(),
-        color: Joi.string().required().max(20).trim()
+        make: Joi.string().required().max(30).trim().pattern(/^[a-zA-Z\s-]+$/)
+          .messages({ 'string.pattern.base': 'Vehicle make can only contain letters, spaces, and hyphens' }),
+        model: Joi.string().required().max(30).trim().pattern(/^[a-zA-Z0-9\s-]+$/)
+          .messages({ 'string.pattern.base': 'Vehicle model can only contain letters, numbers, spaces, and hyphens' }),
+        plateNumber: Joi.string().required().max(15).trim().pattern(/^[a-zA-Z0-9\s-]+$/)
+          .messages({ 'string.pattern.base': 'Plate number can only contain letters, numbers, spaces, and hyphens' }),
+        color: Joi.string().required().max(20).trim().pattern(/^[a-zA-Z\s-]+$/)
+          .messages({ 'string.pattern.base': 'Vehicle color can only contain letters, spaces, and hyphens' })
       }).required()
     }).required(),
     otherwise: Joi.forbidden()
@@ -56,8 +70,11 @@ const phoneRegistrationSchema = Joi.object({
 
 const otpVerificationSchema = Joi.object({
   phone: Joi.string()
-    .pattern(/^\+?[1-9]\d{1,14}$/)
-    .required(),
+    .pattern(/^\d{10}$/)
+    .required()
+    .messages({
+      'string.pattern.base': 'Phone number must be exactly 10 digits, no country code or symbols.'
+    }),
   otp: Joi.string()
     .pattern(/^\d{6}$/)
     .required()
@@ -65,10 +82,14 @@ const otpVerificationSchema = Joi.object({
       'string.pattern.base': 'OTP must be 6 digits'
     }),
   password: Joi.string()
-    .min(6)
+    .min(8)
+    .max(128)
+    .pattern(/^(?=.*[a-zA-Z])(?=.*\d).+$/)
     .required()
     .messages({
-      'string.min': 'Password must be at least 6 characters long'
+      'string.min': 'Password must be at least 8 characters long',
+      'string.max': 'Password cannot exceed 128 characters',
+      'string.pattern.base': 'Password must contain at least one letter and one number'
     }),
   tempUserData: Joi.object({
     phone: Joi.string().optional(),
@@ -514,10 +535,10 @@ const loginPhone = async (req, res) => {
     // Validate request body
     const phoneLoginSchema = Joi.object({
       phone: Joi.string()
-        .pattern(/^\+?[1-9]\d{1,14}$/)
+        .pattern(/^\d{10}$/)
         .required()
         .messages({
-          'string.pattern.base': 'Invalid phone number format'
+          'string.pattern.base': 'Phone number must be exactly 10 digits, no country code or symbols.'
         }),
       password: Joi.string()
         .required()
@@ -760,7 +781,7 @@ const getDevOTP = async (req, res) => {
     const { phone } = req.params;
 
     // Validate phone number format
-    if (!/^\+?[1-9]\d{1,14}$/.test(phone)) {
+    if (!/^\d{10}$/.test(phone)) {
       return res.status(400).json({
         success: false,
         error: {

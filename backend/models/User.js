@@ -106,7 +106,7 @@ const userSchema = new mongoose.Schema({
         if (!phone && this.role === 'admin') {
           return true;
         }
-        return /^\+?[1-9]\d{1,14}$/.test(phone); // E.164 format
+        return /^\d{10}$/.test(phone); // 10 digits, no country code/plus
       },
       message: 'Invalid phone number format'
     }

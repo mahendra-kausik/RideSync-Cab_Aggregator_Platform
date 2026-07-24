@@ -38,7 +38,7 @@ describe('Rides API (Integration)', () => {
 
     it('should allow rider to book a ride and return ride object', async () => {
         // Create rider via OTP flow to obtain a valid session token
-        const phone = '+15550001000';
+        const phone = '5550001000';
         await request(app)
             .post('/api/auth/register-phone')
             .send({ phone, profile: { name: 'Ride Booker' }, role: 'rider' })

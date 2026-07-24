@@ -121,7 +121,11 @@ const LoginPage: React.FC = () => {
                 value={formData.phone}
                 onChange={handleChange}
                 required
-                placeholder="+1234567890"
+                inputMode="numeric"
+                pattern="\d{10}"
+                maxLength={10}
+                title="10-digit phone number, no country code or symbols"
+                placeholder="1234567890"
               />
             </div>
           ) : (
@@ -176,8 +180,8 @@ const LoginPage: React.FC = () => {
         {loginType === 'phone' && (
           <div className="demo-info">
             <h3>Demo Accounts</h3>
-            <p><strong>Rider:</strong> +1234567890 / rider123</p>
-            <p><strong>Driver:</strong> +1234567892 / driver123</p>
+            <p><strong>Rider:</strong> 1234567890 / rider123</p>
+            <p><strong>Driver:</strong> 1234567892 / driver123</p>
           </div>
         )}
       </div>

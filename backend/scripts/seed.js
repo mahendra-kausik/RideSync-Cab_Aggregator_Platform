@@ -19,7 +19,7 @@ const demoUsers = [
     isVerified: true
   },
   {
-    phone: '+1234567890',
+    phone: '1234567890',
     password: 'rider123',
     role: 'rider',
     profile: {
@@ -31,7 +31,7 @@ const demoUsers = [
     isVerified: true
   },
   {
-    phone: '+1234567892',
+    phone: '1234567892',
     password: 'driver123',
     role: 'driver',
     profile: {
@@ -92,8 +92,8 @@ async function seedDatabase() {
 
     console.log('\n🔐 Demo Credentials:');
     console.log('Admin: admin@cabaggreg.local / admin123');
-    console.log('Rider: +1234567890 / rider123');
-    console.log('Driver: +1234567892 / driver123');
+    console.log('Rider: 1234567890 / rider123');
+    console.log('Driver: 1234567892 / driver123');
   } catch (error) {
     console.error('❌ Seeding failed:', error.message);
     process.exit(1);

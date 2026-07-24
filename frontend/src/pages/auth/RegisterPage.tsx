@@ -129,6 +129,10 @@ const RegisterPage: React.FC = () => {
                 value={formData.name}
                 onChange={handleChange}
                 required
+                minLength={2}
+                maxLength={100}
+                pattern="[a-zA-Z\s'.-]+"
+                title="Letters, spaces, apostrophes, periods, and hyphens only"
                 placeholder="Enter your full name"
               />
             </div>
@@ -142,7 +146,11 @@ const RegisterPage: React.FC = () => {
                 value={formData.phone}
                 onChange={handleChange}
                 required
-                placeholder="+1234567890"
+                inputMode="numeric"
+                pattern="\d{10}"
+                maxLength={10}
+                title="10-digit phone number, no country code or symbols"
+                placeholder="1234567890"
               />
             </div>
 
@@ -157,6 +165,10 @@ const RegisterPage: React.FC = () => {
                     value={formData.licenseNumber}
                     onChange={handleChange}
                     required
+                    minLength={5}
+                    maxLength={20}
+                    pattern="[a-zA-Z0-9-]+"
+                    title="Letters, numbers, and hyphens only"
                     placeholder="Enter your license number"
                   />
                 </div>
@@ -170,6 +182,9 @@ const RegisterPage: React.FC = () => {
                     value={formData.vehicleMake}
                     onChange={handleChange}
                     required
+                    maxLength={30}
+                    pattern="[a-zA-Z\s-]+"
+                    title="Letters, spaces, and hyphens only"
                     placeholder="e.g., Toyota"
                   />
                 </div>
@@ -183,6 +198,9 @@ const RegisterPage: React.FC = () => {
                     value={formData.vehicleModel}
                     onChange={handleChange}
                     required
+                    maxLength={30}
+                    pattern="[a-zA-Z0-9\s-]+"
+                    title="Letters, numbers, spaces, and hyphens only"
                     placeholder="e.g., Camry"
                   />
                 </div>
@@ -196,6 +214,9 @@ const RegisterPage: React.FC = () => {
                     value={formData.vehiclePlateNumber}
                     onChange={handleChange}
                     required
+                    maxLength={15}
+                    pattern="[a-zA-Z0-9\s-]+"
+                    title="Letters, numbers, spaces, and hyphens only"
                     placeholder="e.g., ABC123"
                   />
                 </div>
@@ -209,6 +230,9 @@ const RegisterPage: React.FC = () => {
                     value={formData.vehicleColor}
                     onChange={handleChange}
                     required
+                    maxLength={20}
+                    pattern="[a-zA-Z\s-]+"
+                    title="Letters, spaces, and hyphens only"
                     placeholder="e.g., Silver"
                   />
                 </div>
@@ -233,6 +257,9 @@ const RegisterPage: React.FC = () => {
                 onChange={handleChange}
                 required
                 placeholder="Enter 6-digit code"
+                inputMode="numeric"
+                pattern="\d{6}"
+                title="6-digit numeric code"
                 maxLength={6}
               />
             </div>
@@ -246,8 +273,11 @@ const RegisterPage: React.FC = () => {
                 value={formData.password}
                 onChange={handleChange}
                 required
-                placeholder="Create a secure password"
-                minLength={6}
+                placeholder="At least 8 characters, with a letter and a number"
+                minLength={8}
+                maxLength={128}
+                pattern="(?=.*[a-zA-Z])(?=.*\d).+"
+                title="At least 8 characters, with at least one letter and one number"
               />
             </div>
 

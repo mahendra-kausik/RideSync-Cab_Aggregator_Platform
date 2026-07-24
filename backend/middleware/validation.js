@@ -144,53 +144,9 @@ const mongoIdParamSchema = Joi.object({
 });
 
 // User validation schemas
-const phoneRegistrationSchema = Joi.object({
-  phone: Joi.string().pattern(/^\+?[1-9]\d{1,14}$/).required()
-    .messages({
-      'string.pattern.base': 'Phone number must be in valid international format'
-    }),
-  role: Joi.string().valid('rider', 'driver').default('rider'),
-  profile: Joi.object({
-    name: Joi.string().required().min(2).max(50).trim(),
-    avatar: Joi.string().uri().optional()
-  }).required(),
-  driverInfo: Joi.when('role', {
-    is: 'driver',
-    then: Joi.object({
-      licenseNumber: Joi.string().required().min(5).max(20).trim(),
-      vehicleDetails: Joi.object({
-        make: Joi.string().required().max(30).trim(),
-        model: Joi.string().required().max(30).trim(),
-        plateNumber: Joi.string().required().max(15).trim(),
-        color: Joi.string().required().max(20).trim()
-      }).required()
-    }).required(),
-    otherwise: Joi.forbidden()
-  })
-});
-
-const otpVerificationSchema = Joi.object({
-  phone: Joi.string().pattern(/^\+?[1-9]\d{1,14}$/).required(),
-  otp: Joi.string().length(6).pattern(/^\d+$/).required()
-    .messages({
-      'string.length': 'OTP must be exactly 6 digits',
-      'string.pattern.base': 'OTP must contain only numbers'
-    }),
-  password: Joi.string().required().min(6)
-    .messages({
-      'string.min': 'Password must be at least 6 characters long'
-    })
-}).unknown(true); // Allow additional fields like tempUserData
-
-const emailLoginSchema = Joi.object({
-  email: Joi.string().email({ tlds: { allow: false } }).required().lowercase().trim(),
-  password: Joi.string().required().min(6) // Changed from min(8) to min(6) to match seed data
-});
-
-const forgotPasswordSchema = Joi.object({
-  email: Joi.string().email({ tlds: { allow: false } }).required().lowercase().trim()
-});
-
+// Note: registration/OTP/login/forgot-password validation lives solely in
+// authController.js's own Joi schemas -- this file used to carry a second,
+// looser, silently-drifting copy of the same rules (see DECISIONS.md P-010).
 const locationUpdateSchema = Joi.object({
   coordinates: Joi.array().items(Joi.number()).length(2).required(),
   isAvailable: Joi.boolean().optional()
@@ -279,46 +235,6 @@ module.exports = {
   validateRideHistoryQuery: validate(rideHistoryQuerySchema, 'query'),
   validatePendingRidesQuery: validate(pendingRidesQuerySchema, 'query'),
   validateMongoIdParam: validate(mongoIdParamSchema, 'params'),
-
-  // Auth validations
-  validatePhoneRegistration: validate(phoneRegistrationSchema),
-  validateOtpVerification: (req, res, next) => {
-    // Input sanitization - remove potentially dangerous characters
-    if (req.body && typeof req.body === 'object') {
-      req.body = sanitizeInput(req.body);
-    }
-
-    const { error, value } = otpVerificationSchema.validate(req.body, {
-      abortEarly: false, // Return all validation errors
-      stripUnknown: false, // Keep unknown properties like tempUserData
-      allowUnknown: true, // Allow unknown properties
-      convert: true // Convert types when possible
-    });
-
-    if (error) {
-      const errors = error.details.map(detail => ({
-        field: detail.path.join('.'),
-        message: detail.message,
-        value: detail.context?.value,
-        type: detail.type
-      }));
-
-      // Log validation failures for security monitoring
-      console.warn(`Validation failed for ${req.method} ${req.path}:`, {
-        ip: req.ip,
-        userAgent: req.get('User-Agent'),
-        errors: errors.map(e => ({ field: e.field, type: e.type }))
-      });
-
-      throw new AppError('Input validation failed', 400, 'VALIDATION_ERROR', errors);
-    }
-
-    // Replace request data with validated data but preserve unknown fields
-    req.body = { ...req.body, ...value };
-    next();
-  },
-  validateEmailLogin: validate(emailLoginSchema),
-  validateForgotPassword: validate(forgotPasswordSchema),
 
   // User validations
   validateLocationUpdate: validate(locationUpdateSchema),

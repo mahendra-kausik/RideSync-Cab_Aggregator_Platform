@@ -2,11 +2,6 @@ const express = require('express');
 const authController = require('../controllers/authController');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { requireAuth } = require('../middleware/auth');
-const {
-  validatePhoneRegistration,
-  validateOtpVerification,
-  validateEmailLogin
-} = require('../middleware/validation');
 
 const {
   strictAuthRateLimiter,
@@ -28,7 +23,6 @@ const router = express.Router();
  */
 router.post('/register-phone',
   otpRequestRateLimiter,
-  validatePhoneRegistration,
   asyncHandler(authController.registerPhone)
 );
 
@@ -40,7 +34,6 @@ router.post('/register-phone',
  */
 router.post('/verify-otp',
   strictAuthRateLimiter,
-  validateOtpVerification,
   asyncHandler(authController.verifyOTP)
 );
 
@@ -52,7 +45,6 @@ router.post('/verify-otp',
  */
 router.post('/login-email',
   strictAuthRateLimiter,
-  validateEmailLogin,
   asyncHandler(authController.loginEmail)
 );
 

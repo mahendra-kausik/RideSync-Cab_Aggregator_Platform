@@ -10,7 +10,7 @@ const otpSchema = new mongoose.Schema({
     required: true,
     validate: {
       validator: function (phone) {
-        return /^\+?[1-9]\d{1,14}$/.test(phone);
+        return /^\d{10}$/.test(phone);
       },
       message: 'Invalid phone number format'
     },

@@ -63,7 +63,7 @@ global.testUtils = {
     const AuthUtils = require('../utils/auth');
 
     const defaultUser = {
-      phone: '+1234567890',
+      phone: '1234567890',
       password: await AuthUtils.hashPassword('testpassword123'),
       role: 'rider',
       profile: { name: 'Test User' },
@@ -80,7 +80,7 @@ global.testUtils = {
     const AuthUtils = require('../utils/auth');
 
     const defaultDriver = {
-      phone: '+1987654321',
+      phone: '1987654321',
       password: await AuthUtils.hashPassword('driverpass123'),
       role: 'driver',
       profile: { name: 'Test Driver' },

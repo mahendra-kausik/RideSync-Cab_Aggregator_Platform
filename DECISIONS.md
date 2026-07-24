@@ -1052,3 +1052,70 @@
   local dev (no proxy in front, header absent, falls back to the real socket address as before).
 - **Verification:** `npm run lint` clean, full suite 173/173. Live re-verification pending next deploy (locate
   distinct IPs in Render logs for phone vs. laptop after this ships).
+
+## P-010 — Strengthened login/signup validation; found and removed a second, drifting copy of the same schemas
+- **Date / Layer:** 2026-07-24 / user request ("add all necessary validation fields while logging in and signing up")
+- **Context:** Auditing `authController.js`'s Joi schemas for gaps: signup password only required `min(6)`
+  with zero complexity check (`"111111"` was valid); `profile.name`, `driverInfo.licenseNumber`, and
+  `vehicleDetails.{make,model,plateNumber,color}` accepted any string (digits/symbols in a name, empty-ish
+  junk in a plate number). While fixing these, found `middleware/validation.js` carried a **second, independent
+  copy** of the same registration/OTP/login/forgot-password Joi schemas (`phoneRegistrationSchema`,
+  `otpVerificationSchema`, `emailLoginSchema`, `forgotPasswordSchema`), wired into `routes/auth.js` ahead of
+  the controller's own checks. This second copy had already drifted looser than the controller's (a comment
+  read `"Changed from min(8) to min(6) to match seed data"`), and `validateForgotPassword` wasn't even wired
+  to any route — pure dead code. Both copies passing meant the controller's (correct) rules always won in
+  practice, but editing only one (as I was about to) would have left a stale, misleading duplicate that the
+  next person (or session) could edit instead, silently doing nothing.
+- **Action:** Strengthened `authController.js`'s schemas (single remaining source of truth): signup password
+  now `min(8)`, `max(128)`, requires at least one letter and one digit; `profile.name` restricted to
+  letters/spaces/apostrophes/periods/hyphens; `driverInfo.licenseNumber` to letters/digits/hyphens;
+  `vehicleDetails.make`/`color` to letters/spaces/hyphens; `model`/`plateNumber` to letters/digits/spaces/
+  hyphens. Login schemas (`emailLoginSchema`, `phoneLoginSchema`) deliberately left as "password required,
+  format otherwise unchecked" — tightening login would risk rejecting a user's already-set password the
+  moment policy changes, which is a UX bug in most real systems, not a security improvement. Deleted the
+  four duplicate schemas and their three wired middleware exports (`validatePhoneRegistration`,
+  `validateOtpVerification`, `validateEmailLogin`) from `middleware/validation.js` and their `require`/route
+  wiring in `routes/auth.js`, rather than trying to keep two copies in sync. Mirrored the new patterns as
+  HTML5 `pattern`/`minLength`/`maxLength` attributes on `RegisterPage.tsx`/`LoginPage.tsx` inputs so obviously
+  invalid input gets instant feedback instead of a round-trip 400.
+- **Why:** One validation source per endpoint is the only way these rules stay truthful; a second copy is a
+  liability even when it isn't currently the one enforcing anything, since the whole point of Joi-at-the-
+  controller is that a reviewer (or future edit) only has one place to look.
+- **Tradeoffs / risks:** Global `sanitizeInput`/`advancedInputValidation`/`suspiciousActivityDetector`
+  (`server.js:126-128`, from `advancedSecurity.js` — a different module than the one just trimmed) still run
+  on every request, so removing `middleware/validation.js`'s per-route sanitization call lost no coverage —
+  confirmed by grep before deleting. HTML5 `pattern` validation is bypassable client-side (curl/Postman still
+  hit the real Joi rules server-side, as intended) — it's a UX nicety, not a security boundary.
+- **Verification:** `npm run lint` clean, full suite 173/173 (includes `integration/auth-api.test.js`'s
+  register/verify-otp/login flows — all passed against the new stricter rules, confirming no existing test
+  relied on the old min-6 no-pattern behavior).
+
+## P-011 — Phone format changed to 10-digit (no `+`/country code) across the whole stack
+- **Date / Layer:** 2026-07-24 / user request ("phone number should have just 10 digits and no + sign")
+- **Context:** Phone validation was E.164 (`/^\+?[1-9]\d{1,14}$/`) everywhere: `User.js`'s Mongoose validator,
+  `OTP.js`'s Mongoose validator, and three separate Joi schemas in `authController.js` (registration, OTP
+  verification, phone login) plus the ad-hoc check in `getDevOTP`. Switched all six to `/^\d{10}$/`.
+- **Action:** Updated the regex at all six backend call sites, the matching frontend `pattern`/`maxLength`
+  attributes and placeholders on `RegisterPage.tsx`/`LoginPage.tsx` (including the demo-account credential
+  text), and every test fixture that exercises a real validation path (`__tests__/setup.js`'s
+  `createTestUser`/`createTestDriver` helpers, and the phone literals in `auth-api.test.js`,
+  `rides-api.test.js`, `complete-workflows.test.js`) — left untouched the phone literals in mocked/unit tests
+  (`middleware-auth.test.js`, `utils-auth.test.js`, frontend `authService.test.ts`, etc.) that never reach the
+  real Mongoose/Joi validators, and a frontend `MockLoginForm` test component with its own inline regex,
+  unrelated to the real pages. Updated `scripts/seed.js`'s demo rider/driver phones (`'1234567890'`/
+  `'1234567892'`, dropping the `+`) and wrote `scripts/migrate-demo-phone-format.js` to move the two existing
+  live demo accounts from the old to the new format in place (finds them by the *old* value's phone_hash,
+  since that lookup doesn't depend on the current validator, then `.set('phone', newValue)` + `.save()` so the
+  pre-save hook recomputes `phone_hash` and re-encrypts correctly — same pattern as the P-007 re-encryption
+  script).
+- **Why:** User's explicit product decision (10-digit local format, no country code) rather than E.164.
+- **Tradeoffs / risks:** This is a breaking format change for any already-stored phone number. The two live
+  demo accounts predate it (`+1234567890`/`+1234567892`) and won't be found by `findByPhone` with the new
+  10-digit input until migrated — `migrate-demo-phone-format.js` handles this, but **has not been run against
+  the live Atlas database yet**: this session has no `.env`/`MONGODB_URI` configured, so it couldn't be
+  executed here. Must be run (locally with the real `MONGODB_URI`, or via Render's shell) before or
+  immediately after this deploys, or the two demo accounts will be locked out of login until then. No other
+  real users exist yet (confirmed 3 total Atlas users during the P-007 work), so blast radius is limited to
+  the demo accounts.
+- **Verification:** `npm run lint` clean; backend suite 173/173; frontend suite 59/59. Live migration script
+  run is a pending manual step (see Tradeoffs above) — not yet verified against Atlas.
