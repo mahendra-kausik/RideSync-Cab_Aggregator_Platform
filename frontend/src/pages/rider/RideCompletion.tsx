@@ -169,8 +169,7 @@ const RideCompletion: React.FC = () => {
     } catch {
       // ignore — best-effort cleanup
     }
-    // Force a full page reload to reset all state
-    window.location.href = '/rider/book';
+    navigate('/rider/book');
   };
 
   if (isLoading) {

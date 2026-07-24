@@ -95,10 +95,7 @@ const ActiveRideSection: React.FC<ActiveRideSectionProps> = ({
           </div>
           <div className="info-item">
             <strong>Distance:</strong> {(
-              typeof distanceKm === 'number'
-                ? distanceKm
-                // Fallback: approximate from distanceFare using configured per-km rate (1.2)
-                : (ride.fare.breakdown.distanceFare / 1.2)
+              typeof distanceKm === 'number' ? distanceKm : ride.estimatedDistance
             ).toFixed(1)} km
           </div>
           {ride.timeline.startedAt && (

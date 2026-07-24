@@ -66,6 +66,8 @@ export interface Ride {
   status: 'requested' | 'matched' | 'accepted' | 'in_progress' | 'completed' | 'cancelled';
   pickup: Location;
   destination: Location;
+  estimatedDistance: number;
+  estimatedDuration: number;
   fare: {
     estimated: number;
     final?: number;

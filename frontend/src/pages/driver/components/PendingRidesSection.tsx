@@ -17,11 +17,6 @@ const PendingRidesSection: React.FC<PendingRidesSectionProps> = ({
   // Ensure rides is always an array
   const safeRides = Array.isArray(rides) ? rides : [];
 
-  const calculateDistance = (ride: Ride): number => {
-    // Better estimate from backend fare breakdown using perKmRate (1.2)
-    return (ride.fare.breakdown.distanceFare / 1.2) || 0;
-  };
-
   const formatTimeAgo = (dateString: string): string => {
     const now = new Date();
     const requestTime = new Date(dateString);
@@ -109,12 +104,12 @@ const PendingRidesSection: React.FC<PendingRidesSectionProps> = ({
                 <div className="ride-meta">
                   <div className="meta-item">
                     <span className="meta-label">Distance</span>
-                    <span className="meta-value">{calculateDistance(ride).toFixed(1)} km</span>
+                    <span className="meta-value">{ride.estimatedDistance.toFixed(1)} km</span>
                   </div>
                   <div className="meta-item">
                     <span className="meta-label">Est. Time</span>
                     <span className="meta-value">
-                      {Math.ceil(calculateDistance(ride) * 2)} min
+                      {Math.ceil(ride.estimatedDuration)} min
                     </span>
                   </div>
                 </div>
