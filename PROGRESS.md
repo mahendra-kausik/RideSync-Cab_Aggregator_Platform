@@ -5,12 +5,19 @@
 > lives in `DECISIONS.md`; headline numbers + architecture live in `README.md`.
 
 ## Current status
-**⚠️ ACTIVE INCIDENT — READ THIS FIRST (P-006 in DECISIONS.md).** `/api/*` routes on the live Render app can
-hang indefinitely when its Redis connection to Upstash goes stale — confirmed live, root-caused, a first fix
-attempt made it *worse* (boot crash-loop) and was reverted (`git revert`, commit `823cfc3`, pushed). The
-revert only restores the pre-crash-loop (hangs-but-doesn't-crash) state — **the underlying bug is still
-unfixed**. Full root cause, the broken first attempt, and exactly what to do next are in P-006. Next session:
-verify the revert deployed cleanly first, then re-derive the localized-timeout fix described there.
+**⚠️ ACTIVE INCIDENT — READ THIS FIRST (P-006 in DECISIONS.md, both entries).** `/api/*` routes on the live
+Render app can hang indefinitely when its Redis connection to Upstash goes stale. **Two fix attempts have
+now crash-looped production and both were reverted** — live state is back to the original hang-but-doesn't-
+crash baseline (commit `29b0e60`, pushed). Attempt 1: a global `commandTimeout` on the shared client (bounded
+Socket.IO adapter boot commands too). Attempt 2: a localized `withRedisTimeout` wrapper around only
+request-time call sites — still crashed, because `rate-limit-redis`'s `RedisStore` constructor fires an
+eager, unawaited, uncaught `SCRIPT LOAD` command through that same `sendCommand` function at boot; giving it
+a rejection path (the timeout) instead of its previous patient-wait behavior turned it into an unhandled
+rejection. A concrete third approach (exclude `SCRIPT` commands from the timeout wrap, only bound
+`EVALSHA`/`DECR`/`DEL`) is written up in P-006's second entry, **not yet attempted**. Next session: read
+both P-006 entries in full before touching `middleware/security.js`, `sessionManager.js`, or
+`config/redis.js` again, and find a way to exercise the boot connection-churn window in local testing
+before pushing to main a third time.
 
 **Layer 1 shipped — app is live on a public URL.** Demo-account login 401 (P-002) is now **resolved** — all
 three demo accounts (admin/rider/driver) were seeded directly against the live Atlas database this session
@@ -141,9 +148,10 @@ D-014. Lint 0/0, tests 164/164, no regressions.
 
 ## Open items
 - **P-006 (ACTIVE, top priority):** `/api/*` can hang indefinitely on a stale Render→Upstash Redis
-  connection. Reverted a first fix attempt that caused a worse boot crash-loop. Root cause, what was tried,
-  and the exact next steps are fully written up in `DECISIONS.md`'s P-006 entry — read it before touching
-  `backend/config/redis.js`, `middleware/security.js`, or `sessionManager.js` again.
+  connection. **Two fix attempts have crash-looped production and were both reverted** — see both P-006
+  entries in `DECISIONS.md` before touching `backend/config/redis.js`, `middleware/security.js`, or
+  `sessionManager.js` again. A concrete third approach (exclude `rate-limit-redis`'s boot-time `SCRIPT LOAD`
+  from the timeout wrap) is written up but not yet attempted.
 - ~~P-002: demo-account login 401s against Atlas~~ — resolved, accounts seeded directly on Atlas.
 - Layer 1 hosting free-tier limits confirmed live in practice (Render cold-start behavior, Atlas M0, Upstash
   free tier) — no surprises hit so far.
@@ -204,21 +212,26 @@ D-014. Lint 0/0, tests 164/164, no regressions.
 - D-013 — Layer 3 acceptance gate results (REST/WS/circuit-breaker numbers).
 - D-014 — Layer 4: prom-client `/metrics` (default + 3 custom metrics) + AsyncLocalStorage correlation IDs.
 - D-015 — Grafana Cloud dashboard fed by a local, on-demand Grafana Alloy scraper (verified end-to-end).
-- P-006 — **ACTIVE.** `/api/*` hangs on a stale Redis connection; a first fix caused a worse boot crash-loop
-  and was reverted (commit `823cfc3`). Root cause + exact next steps in `DECISIONS.md`.
+- P-006 — **ACTIVE, two crash-loop reverts.** `/api/*` hangs on a stale Redis connection. Attempt 1: global
+  `commandTimeout`, reverted (commit `823cfc3`). Attempt 2: localized `withRedisTimeout` wrapper, also
+  crash-looped (`rate-limit-redis`'s `RedisStore` fires an unawaited boot-time `SCRIPT LOAD` through the same
+  `sendCommand`), reverted (commit `29b0e60`). Root cause of both + a third, not-yet-attempted approach are
+  fully written up in `DECISIONS.md`'s two P-006 entries.
 
 ## How to resume
-1. Read this file, then `CLAUDE.md`, then `DECISIONS.md`'s **P-006** entry — that's the active incident and
-   takes priority over everything else, including Layer 5.
-2. **First**, verify the revert actually deployed cleanly: check the live Render deploy log (not just
+1. Read this file, then `CLAUDE.md`, then **both** `DECISIONS.md` P-006 entries — that's the active incident
+   and takes priority over everything else, including Layer 5.
+2. **First**, verify the second revert actually deployed cleanly: check the live Render deploy log (not just
    GitHub Actions/the deploy-hook status — that only confirms the hook fired) for a clean boot with no
    `Unhandled Promise Rejection` and no repeated `Exited with status 1`. Then re-test `/health` and
    `/api/auth/login-phone` against the live URL.
-3. Once confirmed stable (even if still occasionally hanging on stale Redis — that's the known, pre-existing
-   P-006 bug, not new), re-derive the localized-timeout fix described in P-006 (wrap only
-   `middleware/security.js`'s `sendCommand` and `sessionManager.js`'s private storage methods — never the
-   shared Redis client's own options, never anything the Socket.IO adapter touches at boot). Diagnose the
-   `sessionManager-redis.test.js` failure that stopped the previous attempt before it's considered done.
+3. Once confirmed stable, attempt the third approach written up in P-006's second entry: in the rate
+   limiter's `sendCommand` wrapper, special-case the `SCRIPT` command to pass through **unwrapped**
+   (untimed — same patient-wait-on-reconnect behavior as before any fix), and only apply
+   `withRedisTimeout` to `EVALSHA`/`DECR`/`DEL`. Before pushing to main a third time, find a way to actually
+   exercise the boot connection-churn window locally (not just a clean already-stable local start) — the
+   previous local-against-real-Upstash verification only covered the happy path post-boot and missed this
+   exact failure mode twice now.
    Test locally against real Upstash before pushing to main.
 4. Only after P-006 is genuinely fixed and verified live: resume **Layer 5 — README-as-paper & defense**
    (pending approval, not yet started). Build only that layer, run its gate, update this file + `DECISIONS.md`,

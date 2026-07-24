@@ -625,6 +625,61 @@
   reconnects on its own. Acceptable short-term (matches pre-Layer-4 behavior, not a regression from anything
   shipped and approved), not acceptable as a final state.
 
+## P-006 — second attempt (also reverted): `withRedisTimeout` wrapper crash-looped for the same underlying reason as the first attempt
+- **Date / Layer:** 2026-07-24 / P-006 follow-up #2
+- **Context:** Re-derived the localized fix exactly as sketched above: `backend/utils/withRedisTimeout.js`
+  racing a single Redis command against a 3s timeout, wrapped only around two request-time call sites — the
+  rate limiter's `RedisStore.sendCommand` (`middleware/security.js`) and `sessionManager`'s 8 private
+  storage methods. Locally: lint 0/0, tests 166/166, and a live run against real Upstash + Atlas (server
+  boot clean, demo rider login succeeded end-to-end) — see the previous entry above for the exact diff.
+  Pushed to main (commit `15e4bfa`). **Render crash-looped again within seconds of boot**, confirmed via
+  live deploy logs: `🚨 Unhandled Promise Rejection: Error: Redis command timed out after 3000ms
+  (rate-limit)` at `withRedisTimeout.js:10`, immediately followed by `Exited with status 1`, during the same
+  `ECONNRESET` connection-churn window P-005 already documented (3 Redis connections — main, Socket.IO
+  adapter pub, sub — opening near-simultaneously at cold boot on Upstash).
+- **Root cause:** `rate-limit-redis`'s `RedisStore` constructor
+  (`node_modules/rate-limit-redis/dist/index.cjs:95-96`) calls
+  `this.incrementScriptSha = this.loadIncrementScript()` and `this.getScriptSha = this.loadGetScript()`
+  **eagerly, synchronously, at store-construction time** (i.e. at server boot, since the 4 named limiters —
+  `auth`/`otp`/`api`/`ride-booking` — are all built at module-load time) — and **does not await or `.catch`
+  either call**; it just stores the raw promise on `this.incrementScriptSha`/`this.getScriptSha` for later
+  code to await. Each of those calls issues a `SCRIPT LOAD` through the same `sendCommand` function passed
+  into every other Redis call from this store. Before this fix, that floating promise could only ever
+  *eventually resolve* — `maxRetriesPerRequest: null` (P-005) means an ioredis command on a reconnecting
+  client waits, it never rejects. Wrapping `sendCommand` in `withRedisTimeout` gave that same floating,
+  never-awaited-in-time promise a **deterministic rejection path** (the timeout firing). A rejection on a
+  promise nothing has attached a `.catch` to by the time it settles is Node's textbook unhandled rejection,
+  and the app's own `handleUnhandledRejection` (`middleware/errorHandler.js`) correctly (in general) treats
+  that as fatal. This is a different manifestation of the **same underlying class of bug** as the first
+  reverted attempt (global `commandTimeout`): bounding a command that a *library's own internal, boot-time,
+  unawaited code path* issues, not just the request-time paths under this codebase's direct control.
+- **Action taken:** Reverted immediately (`git revert`, commit `29b0e60`, pushed) to stop the live
+  crash-loop. `backend/utils/withRedisTimeout.js`, its test, and the `security.js`/`sessionManager.js` wraps
+  are gone again; live state is back to the original P-006 hang-but-doesn't-crash baseline.
+- **Why this wasn't caught by local verification:** The local Upstash test only exercised the *happy path*
+  post-boot (server already up, one login call) — it never exercised the boot-time connection-churn window
+  itself under a wrapped `sendCommand`, which is exactly where `RedisStore`'s constructor fires its floating
+  `SCRIPT LOAD` calls. The Layer 2/3 local-against-real-Upstash precedent this session leaned on was
+  designed to catch *request-time* regressions, not *boot-sequence* ones — a gap worth remembering for any
+  future Redis-adjacent change.
+- **Real fix identified, not yet re-attempted live (next session/next attempt should do this first, locally,
+  before ever pushing):** Do not uniformly wrap every command `sendCommand` relays. Inside the rate
+  limiter's `sendCommand` wrapper, special-case the `SCRIPT` command (used only by `RedisStore`'s own
+  boot-time `loadIncrementScript`/`loadGetScript`) to pass through **unwrapped** — let it keep the existing
+  patient-wait-on-reconnect behavior — and only apply `withRedisTimeout` to the actual per-request commands
+  (`EVALSHA`/`DECR`/`DEL`, issued by `increment`/`get`/`decrement`/`resetKey`, all of which are properly
+  `await`ed inside a call chain with an eventual `.catch`, unlike the constructor's detached calls). This
+  targets the exact commands responsible for the original hang (`increment`, called on every rate-limited
+  request) without touching the one command class that's fired detached at boot.
+- **Tradeoffs / risks:** During the (brief) boot connection-churn window, if `SCRIPT LOAD` itself is slow to
+  complete, in-flight requests that need `EVALSHA` (which `await`s `this.incrementScriptSha` before it can
+  run) would still block on that unbounded wait — a narrow reintroduction of the original hang, scoped only
+  to the first few seconds after boot, not to a long-lived stale connection later (the actual production
+  scenario P-006 was filed for, where the script is already loaded and only `EVALSHA` itself goes stale).
+  Any next attempt at this fix must be verified locally against real Upstash with a way to actually exercise
+  the boot-churn window (not just a clean, already-stable local start) before it's pushed to main again —
+  the local verification gap above is the thing to close first.
+
 ---
 
 ## D-015 — Grafana Cloud dashboard fed by a local, on-demand Grafana Alloy scraper
