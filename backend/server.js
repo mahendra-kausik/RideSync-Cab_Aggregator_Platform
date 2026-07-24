@@ -29,6 +29,11 @@ const metricsMiddleware = require('./middleware/metrics');
 const { register: metricsRegister } = require('./config/metrics');
 
 const app = express();
+// Render sits its own reverse proxy in front of this app; without this,
+// req.ip is always the proxy's loopback address (::1) for every request,
+// not the real client IP -- breaks IP-scoped rate limiting/lockout and
+// security-event logging (P-008 follow-up). `1` = trust exactly one hop.
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
 

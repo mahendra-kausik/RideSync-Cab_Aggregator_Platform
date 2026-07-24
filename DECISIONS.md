@@ -1032,3 +1032,23 @@
   pass against the in-memory fallback path (no `REDIS_URL` in the test env). `npm run lint` clean, full suite
   173/173 (169 previous + 4 new).
 - **Supersedes:** the account-scoped design in the P-008 entry above.
+
+## P-009 — Live IP+account lockout still locked the real user out: `req.ip` was always `::1` on Render
+- **Date / Layer:** 2026-07-24 / post-P-008 live verification
+- **Context:** User reproduced the exact scenario the IP-scoped lockout (P-008 follow-up) was built to
+  prevent: failed login 5x on phone, then tried the correct password on laptop, still got `423 ACCOUNT_LOCKED`.
+  Render logs showed `ip: '::1'` on every single request, from both devices. Render terminates TLS and proxies
+  requests to the app container; without `app.set('trust proxy', ...)`, Express doesn't read the real client
+  IP from the `X-Forwarded-For` header the proxy sets, and falls back to the proxy connection's own address —
+  the same value for literally every request, regardless of device. This silently collapsed the P-008 fix
+  back into pure account-scoped locking (the exact flaw P-008 fixed), and also meant `strictAuthRateLimiter`
+  and `securityLogger`'s `ip` field were never distinguishing real clients either — a broader-reaching bug
+  than just the new lockout feature exposed.
+- **Action:** Added `app.set('trust proxy', 1)` in `server.js` right after `express()` is constructed, so
+  `req.ip` reads the first hop of `X-Forwarded-For` (Render's proxy) as the real client address.
+- **Why:** `1` (not `true`) trusts exactly one proxy hop, matching Render's single reverse-proxy topology —
+  trusting an unbounded number of hops would let a client spoof `X-Forwarded-For` and pick their own `req.ip`.
+- **Tradeoffs / risks:** None identified; this only affects how `req.ip` is derived, no behavior change for
+  local dev (no proxy in front, header absent, falls back to the real socket address as before).
+- **Verification:** `npm run lint` clean, full suite 173/173. Live re-verification pending next deploy (locate
+  distinct IPs in Render logs for phone vs. laptop after this ships).
