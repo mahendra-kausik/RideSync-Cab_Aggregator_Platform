@@ -158,12 +158,14 @@ const LoginPage: React.FC = () => {
         </form>
 
         <div className="auth-footer">
-          <p>
-            Don't have an account?{' '}
-            <Link to="/register" className="auth-link">
-              Sign up here
-            </Link>
-          </p>
+          {loginType === 'phone' && (
+            <p>
+              Don't have an account?{' '}
+              <Link to="/register" className="auth-link">
+                Sign up here
+              </Link>
+            </p>
+          )}
           <p>
             <Link to="/forgot-password" className="auth-link">
               Forgot your password?
@@ -171,17 +173,13 @@ const LoginPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="demo-info">
-          <h3>Demo Accounts</h3>
-          {loginType === 'email' ? (
-            <p><strong>Admin:</strong> admin@cabaggreg.local / admin123</p>
-          ) : (
-            <>
-              <p><strong>Rider:</strong> +1234567890 / rider123</p>
-              <p><strong>Driver:</strong> +1234567892 / driver123</p>
-            </>
-          )}
-        </div>
+        {loginType === 'phone' && (
+          <div className="demo-info">
+            <h3>Demo Accounts</h3>
+            <p><strong>Rider:</strong> +1234567890 / rider123</p>
+            <p><strong>Driver:</strong> +1234567892 / driver123</p>
+          </div>
+        )}
       </div>
     </div>
   );
