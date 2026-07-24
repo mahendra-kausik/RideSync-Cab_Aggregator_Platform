@@ -844,6 +844,42 @@
   letting it redeploy. All five application-level P-006 fixes remain in place and correct regardless of how
   this infrastructure question resolves — they are necessary even if not, by themselves, sufficient.
 
+## P-006 — RESOLVED: `REDIS_URL` on Render used `redis://` (plaintext) instead of `rediss://` (TLS)
+- **Date / Layer:** 2026-07-24 / P-006 resolution
+- **Context:** Render's status page showed no incidents. Comparing Render's `REDIS_URL` env var against the
+  working local `.env` (used for every successful diagnostic connection in the sixth entry above) surfaced
+  the actual difference: Render had `redis://default:...@clever-octopus-185627.upstash.io:6379` (plaintext);
+  local `.env` had `rediss://` (TLS) — same host, port, and credentials otherwise.
+- **Why this produces exactly the symptoms observed:** a plain TCP socket connects successfully regardless
+  of scheme, which is why `✅ Redis connected` (ioredis's `connect` event — TCP-level only) kept firing. But
+  Upstash's port 6379 endpoint expects a TLS handshake first; with `redis://`, ioredis instead sends
+  plaintext RESP protocol (the `AUTH` command) immediately. Upstash's server can't parse that against an
+  expected TLS stream and resets the connection — the `❌ ... ECONNRESET` immediately after every `connect`,
+  every time, regardless of reconnect pacing (attempt 5) or which command was being sent (attempt 3/4). It
+  also explains why a fresh `rediss://` connection from outside Render worked instantly, every time, and why
+  Upstash's own command stats showed handshake activity (`AUTH`/`CLIENT`) from other, correctly-configured
+  sources but zero real commands ever landing from Render specifically.
+- **Action:** User corrected Render's `REDIS_URL` env var to `rediss://...`, Render redeployed automatically.
+- **Verified live:** deploy log clean — one `✅ Redis connected`, **zero** `ECONNRESET` afterward (a stark
+  contrast to every prior deploy log this session, all of which churned continuously). `GET /health` 200 in
+  945ms, `GET /api` 200 in 306ms, `POST /api/auth/login-phone` 200 in 2.8s (real login, demo rider account).
+  P-006 is closed.
+- **Why the five application-level fixes stay, not just this one-line env var correction:** the scheme typo
+  caused *this specific incident's* 100% failure rate, but the *original* P-006 bug this investigation
+  started from — a long-lived, correctly-configured connection going stale after hours of idle time (Upstash
+  silently drops idle TCP) — is a real, different, still-possible scenario that a correct `rediss://` scheme
+  does nothing to prevent. `withRedisTimeout` (bounds `sessionManager`/rate-limiter Redis calls) and
+  `redisRateLimitStore.js` (removes `rate-limit-redis`'s retry-loop-that-defeats-timeouts bug, which was a
+  real, independent defect) remain necessary. `retryStrategy`/`keepAlive` (attempt 5) are harmless, sensible
+  defaults kept as-is. Only the `redis://`→`rediss://` correction (an env var, not application code) was the
+  actual trigger for today's incident.
+- **Lesson for the incident log:** five consecutive code-level hypotheses were tested and each fixed a real
+  (if not the acute) defect, but the actual root cause was a one-character-scheme env var difference outside
+  the codebase entirely, only found by systematically comparing a known-working configuration (local `.env`)
+  against the failing one (Render's dashboard) after `CLIENT LIST` diagnostics had ruled out every
+  application- and Upstash-side explanation. Worth remembering: once code-level and server-side diagnostics
+  are exhausted, diff the actual configuration next, before generating a sixth code hypothesis.
+
 ---
 
 ## D-015 — Grafana Cloud dashboard fed by a local, on-demand Grafana Alloy scraper
