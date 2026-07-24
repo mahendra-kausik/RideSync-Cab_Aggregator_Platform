@@ -16,6 +16,14 @@ A comprehensive ride-hailing platform (similar to Ola/Uber) featuring real-time 
 - **Graceful Degradation:** Circuit breaker patterns for fault tolerance
 - **High Test Coverage:** 71.76% code coverage with 578 automated tests
 
+### 🔑 Demo Credentials
+
+| Role | Phone / Email | Password |
+|---|---|---|
+| Admin | admin@cabaggreg.local | admin123 |
+| Rider | 1234567890 | demoRider123 |
+| Driver | 1234567899 | demoDriver123 |
+
 ## 🚀 Getting Started
 
 ### Prerequisites

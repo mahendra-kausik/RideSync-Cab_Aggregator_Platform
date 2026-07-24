@@ -7,7 +7,7 @@ async function getRiderToken() {
   const res = await fetch(`${BASE_URL}/api/auth/login-phone`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone: '+1234567890', password: 'rider123' })
+    body: JSON.stringify({ phone: '1234567890', password: 'demoRider123' })
   });
   const body = await res.json();
   if (!res.ok || !body.success) {

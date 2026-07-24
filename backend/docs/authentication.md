@@ -43,14 +43,14 @@ POST /api/auth/register-phone
 Content-Type: application/json
 
 {
-  "phone": "+1234567890",
+  "phone": "1234567890",
   "name": "John Doe",
   "role": "rider"
 }
 
 // For drivers, include additional fields:
 {
-  "phone": "+1234567890",
+  "phone": "1234567890",
   "name": "Jane Driver",
   "role": "driver",
   "licenseNumber": "DL123456789",
@@ -70,7 +70,7 @@ POST /api/auth/verify-otp
 Content-Type: application/json
 
 {
-  "phone": "+1234567890",
+  "phone": "1234567890",
   "otp": "123456",
   "password": "securePassword123",
   "tempUserData": {
@@ -103,7 +103,7 @@ Content-Type: application/json
 
 ### Development OTP Retrieval
 ```http
-GET /api/auth/dev/otp/+1234567890
+GET /api/auth/dev/otp/1234567890
 ```
 
 ## Middleware Usage
@@ -199,7 +199,7 @@ npm test
 ### OTP Simulation
 In development mode, OTPs are logged to the console:
 ```
-📱 SMS Simulation - OTP for +1234567890: 123456
+📱 SMS Simulation - OTP for 1234567890: 123456
 ⏰ OTP expires at: 2024-01-01T12:05:00.000Z
 ```
 
@@ -214,7 +214,7 @@ Password reset links are logged to the console:
 ### Dev OTP Endpoint
 Use the development endpoint to retrieve OTPs for testing:
 ```bash
-curl http://localhost:5000/api/auth/dev/otp/+1234567890
+curl http://localhost:5000/api/auth/dev/otp/1234567890
 ```
 
 ## Requirements Compliance

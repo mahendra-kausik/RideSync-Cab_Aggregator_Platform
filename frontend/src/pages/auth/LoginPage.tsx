@@ -180,8 +180,8 @@ const LoginPage: React.FC = () => {
         {loginType === 'phone' && (
           <div className="demo-info">
             <h3>Demo Accounts</h3>
-            <p><strong>Rider:</strong> 1234567890 / rider123</p>
-            <p><strong>Driver:</strong> 1234567892 / driver123</p>
+            <p><strong>Rider:</strong> 1234567890 / demoRider123</p>
+            <p><strong>Driver:</strong> 1234567899 / demoDriver123</p>
           </div>
         )}
       </div>

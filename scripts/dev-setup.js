@@ -293,8 +293,8 @@ async function showCompletionInfo() {
 
   console.log('\n🔐 Test Credentials:');
   console.log('  • Admin:  admin@cabaggreg.local / admin123');
-  console.log('  • Rider:  +1234567890 / rider123');
-  console.log('  • Driver: +1234567892 / driver123');
+  console.log('  • Rider:  1234567890 / demoRider123');
+  console.log('  • Driver: 1234567899 / demoDriver123');
 
   console.log('\n🛠️  Useful Commands:');
   console.log('  • Start all services:     npm run dev');

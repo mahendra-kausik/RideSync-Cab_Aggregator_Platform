@@ -1119,3 +1119,32 @@
   the demo accounts.
 - **Verification:** `npm run lint` clean; backend suite 173/173; frontend suite 59/59. Live migration script
   run is a pending manual step (see Tradeoffs above) — not yet verified against Atlas.
+
+## P-011 — follow-up: demo creds renamed, migrated live on Atlas, found a stray test account
+- **Date / Layer:** 2026-07-24 / user request (new demo rider/driver identity)
+- **Context:** User asked for entirely new demo identities (rider: same phone `1234567890`, name
+  `demoRider1`, password `demoRider123`; driver: new phone `1234567899`, name `demoDriver1`, password
+  `demoDriver123`), then to run this against Atlas and document in the README.
+- **Action:** Replaced the in-place `migrate-demo-phone-format.js` (written for the P-011 phone-format-only
+  case, insufficient once the driver's phone number itself was also changing) with
+  `scripts/reset-demo-accounts.js`: deletes the old demo rider/driver by their previous phone numbers, then
+  calls `seed.js`'s `ensureDemoAccounts()` to insert fresh ones matching the current `demoUsers` definition.
+  Ran it against Atlas using the real `MONGO_URI` from the repo-root `.env` (this session has no
+  `backend/.env`, so `dotenv`'s default cwd-relative lookup silently fell back to the docker-compose default
+  URI on the first attempt — re-ran with an explicit `dotenv_config_path=../.env`). Updated the same phone/
+  password literals in `load/lib/getToken.js`, `scripts/dev-setup.js`, `backend/docs/authentication.md`, and
+  `backend/postman/cab-aggregator-local.postman_environment.json` for consistency. Added a demo-credentials
+  table to `README.md`.
+- **Why:** A fresh delete-then-reseed is simpler and less error-prone than patching individual fields (phone,
+  name, password) on existing documents in place, especially since the driver's phone number itself changed
+  (not just its format).
+- **Tradeoffs / risks:** None for the intended accounts — verified both new accounts' passwords with
+  `comparePassword` directly against Atlas after the reset.
+- **Discovery (flagged, not acted on):** The live `users` collection had a **4th account** beyond the
+  expected admin/rider/driver trio: a rider with phone `4444444444`, name `"User"` (the schema's default),
+  created `2026-07-24T08:59:53Z` — same session as today's live account-lockout testing (P-008/P-009). Almost
+  certainly a throwaway test registration (via the real `/api/auth/register-phone` flow, not seed-created)
+  rather than seed/demo clutter, so it was left alone rather than deleted unilaterally. Flagged to the user
+  for a decision on whether to remove it.
+- **Verification:** `User.findByPhone('1234567890').comparePassword('demoRider123')` and the driver
+  equivalent both returned `true` against the live Atlas data. `npm run lint` clean, full suite 173/173.
