@@ -680,7 +680,7 @@
   the boot-churn window (not just a clean, already-stable local start) before it's pushed to main again —
   the local verification gap above is the thing to close first.
 
-## P-006 — third attempt: exclude `SCRIPT` from the timeout wrap (implemented, pending live verification)
+## P-006 — third attempt: exclude `SCRIPT` from the timeout wrap (did not crash, but did not fix the hang either — superseded by the fourth entry below)
 - **Date / Layer:** 2026-07-24 / P-006 follow-up #3
 - **Context:** Implemented the fix identified at the end of the second attempt above. Re-created
   `backend/utils/withRedisTimeout.js` (unchanged from before) and re-applied it to `sessionManager.js`'s 8
@@ -710,8 +710,60 @@
   evidence for this fix is the source-level one: `SCRIPT` is now provably excluded from ever rejecting via
   this wrapper, which was the entire, specific mechanism of the attempt-2 crash — not a probabilistic
   mitigation.
-- **Status:** implemented, verified as above, about to be pushed. Live Render deploy-log verification (clean
-  boot with the real `ECONNRESET` churn Render always shows) is the remaining, decisive check.
+- **Status:** pushed (commit `2f68813`). **Live deploy log confirmed no crash** — over a full minute and 20+
+  `ECONNRESET` reconnect cycles (more sustained churn than either of the first two attempts saw before
+  crashing within seconds), zero unhandled rejections, zero `Exited with status 1`. The crash-loop is
+  genuinely fixed. **But the original hang bug was not**: live-testing `GET /api` and
+  `POST /api/auth/login-phone` immediately after this deploy still timed out at 20s+ with no response at
+  all — see the fourth entry below for why and the actual fix.
+
+## P-006 — fourth attempt: replace `rate-limit-redis`'s `RedisStore` with a plain `INCR`/`PEXPIRE`/`PTTL` store (fixes the hang, verified live)
+- **Date / Layer:** 2026-07-24 / P-006 follow-up #4
+- **Context:** Attempt 3 stopped the crash-loop but live-tested `/api` and `/api/auth/login-phone` both
+  still hung 20s+ (client-side abort, no response). Root cause traced to `rate-limit-redis`'s own retry
+  logic: `RedisStore.retryableIncrement`/`.get` wrap their `EVALSHA` call in a bare `try { } catch { }` that
+  treats **any** rejection — including a deliberate `withRedisTimeout` timeout — as "script not cached,"
+  and unconditionally retries by calling `loadIncrementScript`/`loadGetScript` again (a fresh `SCRIPT LOAD`),
+  which attempt 3 deliberately left **unbounded** to avoid the attempt-2 crash. During Render's sustained
+  Upstash connection churn, that fresh, unbounded reload itself stalls, so every rate-limiter timeout just
+  triggers another unbounded wait — completely negating the 3s bound for exactly the scenario P-006 exists
+  to fix. This is a structural incompatibility between `rate-limit-redis`'s Lua-script/auto-retry design and
+  any timeout-based approach, not something fixable by further tuning the wrapper.
+- **Decision:** Dropped `rate-limit-redis` entirely. Added `backend/utils/redisRateLimitStore.js` — a
+  ~40-line express-rate-limit v6 `Store` implementation backed directly by `INCR`/`PEXPIRE`/`PTTL` (the
+  standard fixed-window-counter pattern: increment, arm the window's expiry only on the first hit, read the
+  remaining TTL for `resetTime`). Every command is independently wrapped in `withRedisTimeout` — there is no
+  Lua script, no `SCRIPT LOAD`, and critically **no library-internal retry-on-any-error loop** to fight,
+  since each of `increment`/`decrement`/`resetKey` is a single primitive command this codebase fully
+  controls. `middleware/security.js`'s `createAdvancedRateLimiter` now does
+  `new RedisRateLimitStore(redisClient, \`rl:${name}:\`)` instead of constructing `RedisStore`. Removed the
+  now-unused `rate-limit-redis` dependency from `backend/package.json`.
+- **Why:** Fixes the actual root cause (an uncontrollable retry loop inside a third-party library) rather
+  than continuing to patch around it. `INCR`/`PEXPIRE`/`PTTL` are boring, well-understood primitives with
+  behavior fully specified by this codebase, not a dependency's internal Lua/retry semantics — exactly the
+  kind of thing worth owning directly once a library's "helpful" internal behavior turns out to be the
+  actual obstacle. Functionally equivalent to `rate-limit-redis`'s default (`resetExpiryOnChange: false`)
+  behavior: TTL is armed once per window, not reset on every hit.
+- **Alternatives considered:** Yet another wrapper tweak (e.g., catching the retry inside `sendCommand` and
+  refusing to re-issue `SCRIPT LOAD`) — rejected; fighting a library's internal control flow from outside is
+  fragile and the resulting code would be harder to reason about than just not depending on that control
+  flow. Keeping `rate-limit-redis` but disabling its retry via some option — rejected, no such option exists
+  in v4 (checked `node_modules/rate-limit-redis/dist/index.cjs` directly; the catch-and-retry is unconditional).
+- **Tradeoffs / risks:** One more first-party file to maintain instead of a maintained library — acceptable,
+  the logic is small, boring, and now has its own unit test (`redisRateLimitStore.test.js`) plus a
+  `ponytail:` comment at the call site explaining why. `resetExpiryOnChange` (an option `rate-limit-redis`
+  exposed but this codebase never used) is not reproduced — confirmed no limiter here ever passed it.
+- **Verification:** `npm run lint` 0/0; `npm test` 169/169 (166 existing + 3 new
+  `redisRateLimitStore.test.js` cases: first-hit arms expiry and reports a future `resetTime`, multiple
+  clients stay isolated by prefix, `resetKey` actually clears the counter). Locally against real Upstash +
+  Atlas: clean boot, 5 sequential `GET /api` calls all 200 in ~640ms each (headers confirm
+  `skipSuccessfulRequests: true` correctly increments-then-decrements, keeping `remaining` at 99 each time),
+  demo rider login succeeded (200, ~5.2s — Mongo + bcrypt + multiple session Redis round-trips, not a
+  regression), and — the decisive check — **4 sequential hits of `otpRequestRateLimiter` (max 3) correctly
+  returned 200/200/200/429**, proving the new store actually counts and enforces the limit against real
+  Redis, not just "doesn't crash."
+- **Status:** implemented and locally verified as above; about to be pushed and checked against the live
+  Render deploy log + live endpoint timings, the same way attempts 2 and 3 were.
 
 ---
 

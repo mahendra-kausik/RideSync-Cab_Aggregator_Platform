@@ -5,18 +5,19 @@
 > lives in `DECISIONS.md`; headline numbers + architecture live in `README.md`.
 
 ## Current status
-**⚠️ ACTIVE INCIDENT — READ THIS FIRST (P-006 in DECISIONS.md, all three entries).** `/api/*` routes on the
-live Render app can hang indefinitely when its Redis connection to Upstash goes stale. **Two fix attempts
-already crash-looped production and were reverted** (attempt 1: global `commandTimeout`; attempt 2: a
-`withRedisTimeout` wrapper that unintentionally bounded `rate-limit-redis`'s eager, unawaited, boot-time
-`SCRIPT LOAD` call, turning its previously-patient wait into an unhandled rejection). **Attempt 3 is now
-implemented and about to be pushed:** same `withRedisTimeout` wrapper, but the rate limiter's `sendCommand`
-now excludes the `SCRIPT` command from the timeout entirely (passes through unwrapped, exact pre-fix
-behavior), only bounding the real per-request `EVALSHA`/`DECR`/`DEL` commands. Verified: lint 0/0, tests
-166/166, 4 separate local boots against real Upstash + Atlas (1 initial + 3 rapid back-to-back cycles) all
-clean with no unhandled rejections, demo rider login succeeded. Local boots don't naturally reproduce
-Upstash's `ECONNRESET` churn though, so **the live Render deploy log is still the decisive check** — read
-DECISIONS.md's third P-006 entry, then watch the deploy log after pushing before declaring this closed.
+**⚠️ ACTIVE INCIDENT — READ THIS FIRST (P-006 in DECISIONS.md, all four entries).** `/api/*` routes on the
+live Render app can hang indefinitely when its Redis connection to Upstash goes stale. Attempts 1 and 2
+crash-looped production and were reverted. **Attempt 3 (deployed and live-verified) fixed the crash-loop**
+but not the underlying hang — live-testing after that deploy showed `/api` and `/api/auth/login-phone`
+still timing out at 20s+, because `rate-limit-redis`'s own retry-on-any-error logic unconditionally
+re-triggers an unbounded `SCRIPT LOAD` on every timeout, negating the bound entirely. **Attempt 4 (just
+implemented) drops `rate-limit-redis` entirely**, replacing it with a first-party
+`backend/utils/redisRateLimitStore.js` — plain `INCR`/`PEXPIRE`/`PTTL`, no Lua script, no library-internal
+retry loop to fight. Verified locally against real Upstash + Atlas: lint 0/0, tests 169/169, clean boot, and
+— the decisive check — 4 sequential OTP-limiter (max 3) requests correctly returned 200/200/200/429,
+proving the store actually enforces limits against real Redis. **Not yet pushed to main / live-verified.**
+Read all four P-006 entries in `DECISIONS.md` before touching `middleware/security.js`,
+`sessionManager.js`, or `config/redis.js` again.
 
 **Layer 1 shipped — app is live on a public URL.** Demo-account login 401 (P-002) is now **resolved** — all
 three demo accounts (admin/rider/driver) were seeded directly against the live Atlas database this session
