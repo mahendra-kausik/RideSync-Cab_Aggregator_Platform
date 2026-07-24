@@ -3,6 +3,7 @@ const { RedisStore } = require('rate-limit-redis');
 const helmet = require('helmet');
 const { AppError } = require('./errorHandler');
 const redisClient = require('../config/redis');
+const { withRedisTimeout, REDIS_CMD_TIMEOUT_MS } = require('../utils/withRedisTimeout');
 
 /**
  * Comprehensive Security Middleware
@@ -89,8 +90,14 @@ const createAdvancedRateLimiter = (name, options) => {
     // isolated per limiter, but one shared Redis keyspace is not, so without
     // a per-limiter prefix two limiters with the same default keyGenerator
     // (IP+User-Agent) would double-count the same request against one key.
+    // ponytail: fail-fast (P-006) — a stale Redis connection rejects within
+    // REDIS_CMD_TIMEOUT_MS instead of hanging, which express-rate-limit v6 turns
+    // into a 500 (not fail-open). True fail-open needs `passOnStoreError`, v7-only.
     store: redisClient
-      ? new RedisStore({ sendCommand: (...args) => redisClient.call(...args), prefix: `rl:${name}:` })
+      ? new RedisStore({
+        sendCommand: (...args) => withRedisTimeout(redisClient.call(...args), REDIS_CMD_TIMEOUT_MS, 'rate-limit'),
+        prefix: `rl:${name}:`
+      })
       : undefined,
     message: {
       success: false,

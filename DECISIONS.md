@@ -624,6 +624,39 @@
   an indeterminate time whenever Render's Redis connection goes stale, until `ioredis` eventually notices and
   reconnects on its own. Acceptable short-term (matches pre-Layer-4 behavior, not a regression from anything
   shipped and approved), not acceptable as a final state.
+- **RESOLVED — see the "P-006 fix" entry below** for the localized-timeout fix that was re-derived and
+  verified after this session.
+
+## P-006 fix — localized `withRedisTimeout` wrapper (resolves the entry above)
+- **Date / Layer:** 2026-07-24 / P-006 follow-up
+- **Context:** Per the entry above, the revert only removed the crash-loop; the underlying hang-on-stale-
+  connection bug was still live. Two request-time call sites issue unbounded Redis commands: the rate
+  limiter's `RedisStore.sendCommand` (`middleware/security.js`, mounted on all `/api/*`) and
+  `sessionManager`'s 8 private storage methods (`_putSession`/`_getSession`/etc.).
+- **Decision:** Added `backend/utils/withRedisTimeout.js` — races a single Redis command promise against a
+  3s timeout (`Promise.race`, timer always `clearTimeout`'d in `.finally()` and `.unref()`'d so it can never
+  keep the event loop or a Jest worker alive). Wrapped only the two request-time call sites: the rate
+  limiter's `sendCommand` and all 8 of `sessionManager`'s private storage calls in their Redis branch. Did
+  **not** touch `config/redis.js`'s client options or anything `@socket.io/redis-adapter` touches at boot —
+  that combination is exactly what caused the reverted crash-loop.
+- **Why:** A rejected promise from the rate limiter's store is caught by express-rate-limit **v6.11.2**'s
+  own `handleAsyncErrors` (confirmed by reading `node_modules/express-rate-limit/dist/index.cjs`), which
+  calls `next(err)` — i.e. this fails **fast**, not open, converting an indefinite hang into a bounded 500.
+  True fail-open needs `passOnStoreError`, which only exists in express-rate-limit v7 — a major bump
+  deliberately skipped rather than smuggled into a hotfix; flagged with a `ponytail:` comment at the call
+  site as the ceiling to revisit if a version bump is ever done deliberately. A rejection from any
+  `sessionManager` call propagates to `validateSession`'s existing `try/catch`, which already returns
+  `{ valid: false, error }` — no new error paths, no auth logic changed.
+- **Alternatives considered:** A global `commandTimeout` on the shared client (the reverted first attempt)
+  — rejected, that's the exact mechanism that caused the crash-loop, since it also bounds the Socket.IO
+  adapter's internal boot-time commands. `passOnStoreError` via an express-rate-limit v7 upgrade — rejected
+  for this fix; a major-version bump is a separate, reviewable change, not bundled into an incident fix.
+- **Tradeoffs / risks:** None found. `npm run lint` 0/0; `npm test` 166/166 (164 existing + 2 new
+  `withRedisTimeout.test.js` cases: fast-resolve passes through, never-resolving promise rejects on time) —
+  the previous attempt's unexplained `sessionManager-redis.test.js` failure does not reproduce, consistent
+  with it having been an uncleared timer keeping a Jest worker alive rather than a logic bug. Verified
+  locally against real Upstash Redis + Atlas Mongo (same precedent as the Layer 2 gate): clean boot, no
+  crash, and the seeded demo rider (`+1234567890`/`rider123`) logged in successfully end-to-end.
 
 ---
 
