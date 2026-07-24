@@ -183,6 +183,17 @@ class EncryptionUtils {
      * @param {*} value - Value to set
      */
     setNestedValue(obj, path, value) {
+        // Mongoose documents track nested-path changes for persistence only through
+        // their own .set() API -- a plain `target[lastKey] = value` mutation is
+        // visible in-memory (isModified() even returns true) but Mongoose silently
+        // drops it when building the actual save's update document. Prefer .set()
+        // when available (Mongoose documents); fall back to plain assignment for
+        // ordinary objects (this utility also runs on plain data via
+        // encryptFields/decryptFields, which aren't Mongoose documents).
+        if (typeof obj.set === 'function') {
+            obj.set(path, value);
+            return;
+        }
         const keys = path.split('.');
         const lastKey = keys.pop();
         const target = keys.reduce((current, key) => {

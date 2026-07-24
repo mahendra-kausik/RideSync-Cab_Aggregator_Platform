@@ -882,6 +882,65 @@
 
 ---
 
+## P-007 — PII encryption was never actually persisting to the database, for any user, since inception
+- **Date / Layer:** 2026-07-24 / discovered while investigating cosmetic "Decryption failed" boot log noise
+- **Context:** User asked whether the harmless-looking `Decryption failed: Invalid initialization vector` /
+  `Invalid authentication tag length: 0` log lines (seen on every boot touching the 3 demo accounts) were
+  worth fixing. Root-caused as: the 3 demo accounts were seeded before `ENCRYPTION_KEY` was fully available,
+  so their PII fields were stored as plaintext; the model's decrypt hooks fail gracefully on that plaintext
+  and log a warning. Attempted the "obvious" fix — re-`save()` each demo account with its PII fields marked
+  modified, to force the `pre('save')` encrypt hook to run — and the encryption calls fired correctly (traced
+  via a monkey-patched `encrypt()`), but **the encrypted value was silently discarded and never reached the
+  database.**
+- **Actual root cause:** `backend/utils/encryption.js`'s `setNestedValue(obj, path, value)` mutated the
+  target via plain bracket assignment (`target[lastKey] = value`). For a Mongoose document, that mutation is
+  visible in-memory immediately (`doc.isModified(path)` even returns `true`) but is **not** what Mongoose
+  uses to build the actual database write for a nested path — only Mongoose's own `.set(path, value)` API
+  reliably registers a nested-path change for persistence. Verified directly: raw bracket assignment silently
+  failed to persist through `.save()`; `doc.set('profile.name', ...)` persisted correctly. This is the exact
+  mechanism the User model's `pre('save')` encrypt hook uses for every PII field
+  (`phone`/`email`/`profile.name`/`driverInfo.licenseNumber`/`driverInfo.vehicleDetails.plateNumber`) —
+  meaning **PII encryption has silently no-op'd on every save, for every user, since the feature was written**,
+  despite `AES-256-GCM PII encryption` being one of this project's stated architectural claims.
+- **Verification trap along the way:** an initial fix attempt looked like it *also* failed, because checking
+  the result via `.lean()` still triggered the model's `post(['find','findOne','findOneAndUpdate'])` decrypt
+  hook (`.lean()` only skips document *hydration*, not query *middleware*) — so the "raw" value being
+  inspected was actually already decrypted back to plaintext by the same hook, masking a real, successful fix.
+  Caught by re-checking via `mongoose.connection.db.collection('users').findOne(...)` (the native driver,
+  bypassing all Mongoose schema middleware) — the only way to see the true stored bytes.
+- **Decision:** Fixed `setNestedValue` to call `obj.set(path, value)` when `obj` is a Mongoose document
+  (`typeof obj.set === 'function'`), falling back to the original plain bracket-assignment for ordinary
+  objects (`encryptFields`/`decryptFields` also call this helper on plain data, not just Mongoose documents).
+  Added `backend/scripts/reencrypt-demo-accounts.js` (re-saves each demo account with every PII field marked
+  modified, forcing genuine encryption under the fixed code) and ran it against the live Atlas database.
+- **Why this is the right fix, not a workaround:** it corrects the actual defect (wrong Mongoose API for the
+  object type) at its one source, rather than special-casing callers. `getNestedValue` (read-side) needed no
+  change — plain property-chain reads work identically for Mongoose documents and plain objects.
+- **Verified:** `npm run lint` 0/0, `npm test` 169/169 (schema tests use plain in-memory objects/mocks, not
+  affected). Live against Atlas: `mongoose.connection.db.collection('users').findOne(...)` (native driver,
+  zero Mongoose middleware) confirms all 3 demo accounts' PII fields are now genuine AES-256-GCM ciphertext
+  at rest (previously plaintext). The normal application read path
+  (`User.findByEmail`/`findByPhone`) still decrypts correctly back to the right plaintext. Live login
+  re-verified end-to-end (`POST /api/auth/login-phone`, demo rider, 200, correct decrypted profile
+  returned). Checked the live Atlas `users` collection directly — only 3 documents exist (the demo accounts,
+  now fixed); no other real users were ever created this session, so no broader backfill was needed.
+- **Residual, cosmetic-only issue (not fixed, left as-is):** the `Decryption failed` log lines still
+  appear once per field per load, even post-fix, because `post(['find','findOne','findOneAndUpdate'])` and
+  `post('init')` are two independent, overlapping hooks that both decrypt the same document on a normal
+  `findOne` — the first succeeds and leaves the field as plaintext in memory, the second then tries to
+  decrypt already-decrypted plaintext and fails harmlessly (caught, logged, falls back to the unchanged
+  value). Confirmed harmless (correct data either way) but not touched in this pass — removing either hook
+  needs care to confirm it doesn't drop decrypt coverage for populated sub-documents or
+  `findOneAndUpdate`'s return shape, which is a separately-reviewable, lower-priority cleanup, not bundled
+  into this correctness fix.
+- **Tradeoffs / risks:** None found for the fix itself. This does mean the deployed app's PII-encryption
+  claim was not actually true until this fix landed — worth being straightforward about if this comes up in
+  an interview: found via investigating an unrelated log-noise question, root-caused, fixed, and verified,
+  not something caught by the original test suite (no test exercised whether encrypted fields were actually
+  unreadable via a raw DB read — a gap worth a future test, not added here to keep this fix minimal).
+
+---
+
 ## D-015 — Grafana Cloud dashboard fed by a local, on-demand Grafana Alloy scraper
 - **Date / Layer:** 2026-07-24 / Layer 4
 - **Context:** `/metrics` (D-014) only exposes a live snapshot — nothing stores history or renders it.

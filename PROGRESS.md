@@ -214,6 +214,13 @@ D-014. Lint 0/0, tests 164/164, no regressions.
   live-incident trigger was an env var: Render's `REDIS_URL` used `redis://` instead of `rediss://` (TLS) —
   found by diffing working local config against Render's dashboard after `CLIENT LIST` diagnostics ruled out
   every code-level and Upstash-side explanation. Corrected by the user in Render's dashboard, live-verified.
+- P-007 — **FIXED.** PII encryption (`AES-256-GCM`, a stated project claim) was silently no-op'ing on every
+  save for every user since the feature was written: `encryption.js`'s `setNestedValue` mutated Mongoose
+  documents via plain bracket assignment, which Mongoose doesn't persist for nested paths — only `.set()`
+  does. Fixed the one function; re-encrypted the 3 (only) existing users in Atlas via
+  `backend/scripts/reencrypt-demo-accounts.js`; verified genuinely-encrypted-at-rest via the native MongoDB
+  driver (bypassing Mongoose's own decrypt hooks, which had been masking the bug in earlier checks). Live
+  login re-verified working. Full writeup in `DECISIONS.md`.
 
 ## How to resume
 1. Read this file, then `CLAUDE.md`. P-006 is closed — no action needed there.
