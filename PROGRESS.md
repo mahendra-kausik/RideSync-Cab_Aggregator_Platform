@@ -5,17 +5,23 @@
 > lives in `DECISIONS.md`; headline numbers + architecture live in `README.md`.
 
 ## Current status
-**⚠️ ACTIVE INCIDENT — READ THIS FIRST (P-006 in DECISIONS.md, all four entries).** `/api/*` routes on the
-live Render app can hang indefinitely when its Redis connection to Upstash goes stale. Attempts 1 and 2
-crash-looped production and were reverted. **Attempt 3 (deployed and live-verified) fixed the crash-loop**
-but not the underlying hang — live-testing after that deploy showed `/api` and `/api/auth/login-phone`
-still timing out at 20s+, because `rate-limit-redis`'s own retry-on-any-error logic unconditionally
-re-triggers an unbounded `SCRIPT LOAD` on every timeout, negating the bound entirely. **Attempt 4 (just
-implemented) drops `rate-limit-redis` entirely**, replacing it with a first-party
-`backend/utils/redisRateLimitStore.js` — plain `INCR`/`PEXPIRE`/`PTTL`, no Lua script, no library-internal
-retry loop to fight. Verified locally against real Upstash + Atlas: lint 0/0, tests 169/169, clean boot, and
-— the decisive check — 4 sequential OTP-limiter (max 3) requests correctly returned 200/200/200/429,
-proving the store actually enforces limits against real Redis. **Not yet pushed to main / live-verified.**
+**⚠️ P-006 — application-level work DONE and verified; BLOCKED on an infrastructure issue outside this
+codebase (see DECISIONS.md's six P-006 entries).** The original bug (`/api/*` hanging indefinitely on a
+stale Redis connection) is genuinely fixed — attempts 1-4 progressively eliminated two crash-loop
+regressions and a library-internal retry loop that silently defeated an earlier timeout fix; the current
+code (`backend/utils/withRedisTimeout.js`, `backend/utils/redisRateLimitStore.js`,
+`backend/config/redis.js`) correctly turns a stale connection into a fast, bounded failure instead of an
+infinite hang, verified clean under sustained live churn with no crash. **But right now, live, every
+`/api/*` request still fails** — not by hanging, but because Render's connection to Upstash cannot complete
+a single command. Root-caused via direct diagnosis (bypassing both the app and Upstash's REST-restricted
+web CLI, connecting straight to Upstash with `ioredis` and polling `CLIENT LIST` during a live failing
+request): Render's connection attempts **never once appear on Upstash's server side**, ruling out every
+Upstash-side explanation (no quota, no connection-limit pile-up, confirmed via `INFO clients`) and every
+application-level explanation (an identical connection from outside Render's network succeeds instantly,
+every time). This is a **network-layer connectivity problem between Render's egress and this specific
+Upstash endpoint** — not fixable by more application code. User is checking Render's/Upstash's status pages
+and considering recreating the Upstash database (new hostname/IP) as next steps; both are dashboard actions
+outside what Claude Code can do directly.
 Read all four P-006 entries in `DECISIONS.md` before touching `middleware/security.js`,
 `sessionManager.js`, or `config/redis.js` again.
 
@@ -147,11 +153,14 @@ D-014. Lint 0/0, tests 164/164, no regressions.
 - **Remaining Layer 1 code work:** none blocking — rest of Layer 1 is hosted-account creation + env wiring.
 
 ## Open items
-- **P-006 (ACTIVE, top priority):** `/api/*` can hang indefinitely on a stale Render→Upstash Redis
-  connection. **Two fix attempts have crash-looped production and were both reverted** — see both P-006
-  entries in `DECISIONS.md` before touching `backend/config/redis.js`, `middleware/security.js`, or
-  `sessionManager.js` again. A concrete third approach (exclude `rate-limit-redis`'s boot-time `SCRIPT LOAD`
-  from the timeout wrap) is written up but not yet attempted.
+- **P-006 (BLOCKED on infrastructure, not code):** the original hang bug is fixed and verified — see all six
+  P-006 entries in `DECISIONS.md`. What's left is a network-layer connectivity problem between Render's
+  egress and the current Upstash endpoint (Render's connection attempts never reach Upstash's Redis server
+  at all, confirmed via live `CLIENT LIST` polling during a failing request). Next step is on the user's
+  side: check Render's/Upstash's status pages, or recreate the Upstash database for a new hostname/IP and
+  update `REDIS_URL` in Render's env vars. No further application-code changes are indicated until that
+  resolves — re-read the sixth P-006 entry before touching `backend/config/redis.js`,
+  `middleware/security.js`, or `sessionManager.js` again.
 - ~~P-002: demo-account login 401s against Atlas~~ — resolved, accounts seeded directly on Atlas.
 - Layer 1 hosting free-tier limits confirmed live in practice (Render cold-start behavior, Atlas M0, Upstash
   free tier) — no surprises hit so far.
@@ -212,27 +221,24 @@ D-014. Lint 0/0, tests 164/164, no regressions.
 - D-013 — Layer 3 acceptance gate results (REST/WS/circuit-breaker numbers).
 - D-014 — Layer 4: prom-client `/metrics` (default + 3 custom metrics) + AsyncLocalStorage correlation IDs.
 - D-015 — Grafana Cloud dashboard fed by a local, on-demand Grafana Alloy scraper (verified end-to-end).
-- P-006 — **ACTIVE, two crash-loop reverts.** `/api/*` hangs on a stale Redis connection. Attempt 1: global
-  `commandTimeout`, reverted (commit `823cfc3`). Attempt 2: localized `withRedisTimeout` wrapper, also
-  crash-looped (`rate-limit-redis`'s `RedisStore` fires an unawaited boot-time `SCRIPT LOAD` through the same
-  `sendCommand`), reverted (commit `29b0e60`). Root cause of both + a third, not-yet-attempted approach are
-  fully written up in `DECISIONS.md`'s two P-006 entries.
+- P-006 — Six entries in `DECISIONS.md`. Application-level bug (indefinite hang) **fixed and verified**:
+  two crash-loop regressions eliminated (commits `823cfc3`, `29b0e60` reverted the bad attempts), a
+  library-internal retry loop that silently defeated an earlier timeout fixed by dropping `rate-limit-redis`
+  for a first-party store (commit `499a47a`), reconnect pacing tuned (commit `a91f27f`, harmless but didn't
+  fix the remaining symptom). **Currently blocked on a network-layer connectivity problem between Render and
+  Upstash**, confirmed via live `CLIENT LIST` polling — outside this codebase's control. See the sixth entry.
 
 ## How to resume
-1. Read this file, then `CLAUDE.md`, then **both** `DECISIONS.md` P-006 entries — that's the active incident
-   and takes priority over everything else, including Layer 5.
-2. **First**, verify the second revert actually deployed cleanly: check the live Render deploy log (not just
-   GitHub Actions/the deploy-hook status — that only confirms the hook fired) for a clean boot with no
-   `Unhandled Promise Rejection` and no repeated `Exited with status 1`. Then re-test `/health` and
-   `/api/auth/login-phone` against the live URL.
-3. Once confirmed stable, attempt the third approach written up in P-006's second entry: in the rate
-   limiter's `sendCommand` wrapper, special-case the `SCRIPT` command to pass through **unwrapped**
-   (untimed — same patient-wait-on-reconnect behavior as before any fix), and only apply
-   `withRedisTimeout` to `EVALSHA`/`DECR`/`DEL`. Before pushing to main a third time, find a way to actually
-   exercise the boot connection-churn window locally (not just a clean already-stable local start) — the
-   previous local-against-real-Upstash verification only covered the happy path post-boot and missed this
-   exact failure mode twice now.
-   Test locally against real Upstash before pushing to main.
-4. Only after P-006 is genuinely fixed and verified live: resume **Layer 5 — README-as-paper & defense**
-   (pending approval, not yet started). Build only that layer, run its gate, update this file + `DECISIONS.md`,
-   then STOP and ask for approval before anything further.
+1. Read this file, then `CLAUDE.md`, then **all six** `DECISIONS.md` P-006 entries, especially the sixth.
+2. Check whether the user has resolved the infrastructure blocker (Render/Upstash status page, or a
+   recreated Upstash database with an updated `REDIS_URL` in Render's env vars — both are dashboard actions
+   outside what Claude Code can do). If unresolved, do **not** attempt another application-code fix without
+   new diagnostic evidence — five different code-level theories were tried and verified locally this
+   session; the sixth entry's live `CLIENT LIST` diagnosis is the first one to actually pin down the real
+   cause, and it's not in this codebase.
+3. If resolved (Render can now reach Upstash): re-verify live — `GET /api` and `POST /api/auth/login-phone`
+   should return quickly and successfully, not just avoid crashing. Re-verify demo logins (P-002's original
+   purpose). Then close out P-006 in both `DECISIONS.md` and this file's status banner.
+4. Only after P-006 is genuinely closed: resume **Layer 5 — README-as-paper & defense** (pending approval,
+   not yet started). Build only that layer, run its gate, update this file + `DECISIONS.md`, then STOP and
+   ask for approval before anything further.

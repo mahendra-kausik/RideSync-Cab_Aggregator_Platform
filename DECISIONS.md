@@ -764,6 +764,85 @@
   Redis, not just "doesn't crash."
 - **Status:** implemented and locally verified as above; about to be pushed and checked against the live
   Render deploy log + live endpoint timings, the same way attempts 2 and 3 were.
+- **Live result:** pushed (commit `499a47a`), deploy log clean (no crash). But live testing of `GET /api`
+  and `POST /api/auth/login-phone` showed a **new, more fundamental problem**: 100% failure rate (8/8 checks
+  over 2+ minutes), every request failing with the same bounded `500`:
+  `"Redis command timed out after 3000ms (ratelimit:incr)"`. Not the original hang (that's fixed — it's now
+  a fast, bounded failure), but the app still can't actually talk to Redis at all. See the fifth entry below.
+
+## P-006 — fifth attempt: slow reconnect pacing + TCP keepalive (fixed nothing — wrong theory, but ruled it out cleanly)
+- **Date / Layer:** 2026-07-24 / P-006 follow-up #5
+- **Context:** After the fourth attempt's 100% live failure rate, the Render deploy log showed `✅ Redis
+  connected` immediately followed by `❌ ... ECONNRESET`, repeating forever, with the interval between
+  `connect` events growing on a clean, textbook schedule (1.05s, 1.10s, 1.15s, ... capping at 2.00s) —
+  `ioredis`'s exact default `retryStrategy` (`Math.min(times * 50, 2000)`). Meanwhile a fresh connection to
+  the same Upstash instance from outside Render succeeded instantly (`PING` 1.2s, `INCR` 230ms). **Working
+  theory at the time:** 3 clients (main + Socket.IO adapter's pub/sub duplicates) reconnecting on that
+  aggressive default schedule were plausibly tripping a connection-rate/abuse guard on Upstash's free tier,
+  which reset the new connection almost immediately and perpetuated the loop.
+- **Decision:** `backend/config/redis.js` — added `retryStrategy: (times) => Math.min(times * 500, 15000)`
+  (roughly 5-7x slower reconnect pacing than `ioredis`'s default once ramped up) and `keepAlive: 10000` (TCP
+  keepalive probes every 10s, to keep an established connection alive at the network layer). Both options are
+  inherited automatically by `server.js`'s `pubClient`/`subClient` via `.duplicate()`. No command-timeout or
+  boot-time behavior touched — isolated to connection pacing only, deliberately, given the crash-loop history
+  of touching anything client-level.
+- **Live result:** pushed (commit `a91f27f`). Deploy log confirmed the new pacing **was** active — reconnect
+  intervals visibly grew well past the old 2s ceiling (2s → 3s → 4s → 5s → 6.5s → 7.5s...). No crash. But
+  **the failure rate was completely unchanged**: 6/6 more checks over 90 seconds, identical `500` and
+  message, identical ~3.3s timing. This **disproves the reconnect-volume theory** — slowing reconnect
+  attempts down 5-7x had zero effect, so the problem isn't "too many connection attempts," it's something
+  that fails on *every single attempt* regardless of pacing.
+- **Why documented as a "failure" entry, not deleted:** the change itself is harmless and arguably still a
+  reasonable default (gentler reconnect pacing, TCP keepalive) — left in place — but it did not fix the
+  actual problem and the live test that disproved the theory was valuable: it's what motivated checking
+  Upstash's own server-side stats instead of continuing to guess from outside (see the sixth entry below).
+- **Tradeoffs / risks:** None from the change itself (still safe, still verified via lint 0/0 / tests
+  169/169). The risk was in the session's pace: this was the second attempt in a row that looked
+  well-reasoned and passed local verification but didn't fix the live symptom — a reminder that this
+  specific failure mode cannot be verified locally at all (no `ECONNRESET` ever appeared in any local boot
+  this session) and every theory needed a live round-trip to actually test.
+
+## P-006 — sixth entry: root cause is a network-layer connectivity problem between Render and Upstash, not application code
+- **Date / Layer:** 2026-07-24 / P-006 follow-up #6
+- **Context:** After the fifth attempt disproved the reconnect-volume theory, the user shared Upstash
+  dashboard screenshots. Two findings, in order:
+  1. **"Top Commands Usage" (past week)**: `CLIENT: 34`, `AUTH: 18`, `GET: 15`, `INFO: 17` all nonzero
+     (connections were completing the handshake), but **`INCR: 0`, `DECR: 0`, `PEXPIRE: 0`, `EXISTS: 0`,
+     `EVALSHA: 0`, `PSUBSCRIBE: 0`** — every application-level command this app actually needs (rate
+     limiter, Socket.IO adapter subscribe) showed **zero**, ever, in Upstash's own server-side stats, all
+     session. Daily command/bandwidth graphs were nowhere near any plausible free-tier quota.
+  2. Ran `INFO clients` via Upstash's web CLI (their `CLIENT LIST` is blocked specifically on that REST-based
+     CLI transport — `"ERR Command CLIENT is not allowed in REST"`, an Upstash platform restriction, not
+     something related to this app or session): `connected_clients: 1`, `maxclients: 30000` — ruling out a
+     connection-limit/zombie-connection pile-up (the plan's leading theory going in) definitively; nowhere
+     close to any cap.
+  3. Connected directly to the same Upstash instance via `ioredis` (bypassing the web CLI's REST
+     restriction entirely, using the raw RESP protocol) and ran `CLIENT LIST` directly: exactly **one**
+     connection — the diagnostic connection itself. Then, **while a live `GET /api` request against Render
+     was in flight** (the one that predictably failed ~3s later with the now-familiar timeout), polled
+     `CLIENT LIST` on a 500ms interval throughout its entire lifecycle: **Render's connection attempt never
+     appeared, not even once, at any point during the request.**
+- **Conclusion:** This is a **network-layer connectivity problem specific to the path between Render's
+  egress and this Upstash endpoint** — Render's TCP/TLS handshake is either resolving to an unreachable
+  address or being reset before it ever reaches Upstash's Redis process, so nothing about the connection
+  attempt is ever visible from Upstash's side. This explains every observation across attempts 3-5
+  consistently: `CLIENT`/`AUTH` counts nonzero historically (some connections did complete, likely during
+  yesterday's Layer 2/3 local-against-real-Upstash testing, a different network path entirely) while
+  `INCR`/`EVALSHA`/`PSUBSCRIBE` stayed at zero from Render specifically; no amount of client-side retry
+  tuning helped, because retry pacing was never the actual constraint.
+- **Why this is out of scope for further application-code changes:** five consecutive fixes this session
+  (documented above) correctly resolved every application-level defect they targeted — the indefinite hang
+  (fixed, now bounded), two crash-loop regressions (fixed, verified clean under heavy live churn), a
+  library-internal retry loop that silently defeated a timeout (fixed, replaced with first-party code), and
+  reconnect pacing (harmless, ruled out a theory cleanly). None of them could have fixed a connectivity
+  problem that exists below the application layer, between two hosting providers' networks.
+- **Status — blocked on infrastructure, not code.** Next steps requiring the user's own dashboard access
+  (not available to Claude Code): (1) check Render's and Upstash's status pages for an active incident in
+  the relevant region; (2) consider recreating the Upstash database (free, fast) to get a new
+  hostname/IP — if this is a stale-DNS or bad-route-to-this-specific-IP issue, a fresh instance may resolve
+  differently and just work; would require updating `REDIS_URL` in Render's environment variables and
+  letting it redeploy. All five application-level P-006 fixes remain in place and correct regardless of how
+  this infrastructure question resolves — they are necessary even if not, by themselves, sufficient.
 
 ---
 
