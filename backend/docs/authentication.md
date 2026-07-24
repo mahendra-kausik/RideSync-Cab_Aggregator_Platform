@@ -144,7 +144,7 @@ router.get('/special', authorizeRoles(['admin', 'driver']), controller.specialEn
 
 ### Input Validation
 - Joi schema validation for all endpoints
-- Phone number format validation (E.164)
+- Phone number format validation (10-digit)
 - Email format validation
 - Password strength requirements
 

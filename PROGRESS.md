@@ -31,7 +31,8 @@ for context on why the live API needs to actually work before any of this matter
 Upstash Redis + Atlas Mongo and passed both checks (cross-instance Socket.IO delivery, session survives an
 instance restart) — see the "Layer 2 gate — PASSED" entry in `DECISIONS.md`. Along the way it caught and
 fixed two real concurrency bugs only reachable with 2+ instances: a demo-seed race (P-004) and a
-rate-limiter Redis-key collision (D-011). Lint 0/0, tests 164/164 (163 existing + 1 new).
+rate-limiter Redis-key collision (D-011). Lint 0/0, tests 164/164 (163 existing + 1 new) at the time — see the post-Layer-4
+hardening note below for the current 173/173 baseline.
 
 **Layer 3 shipped — gate passed.** Three `load/` scenarios (k6 REST ramp, Node/`socket.io-client` WS hold,
 Node fault-injection breaker trip), all local against real Atlas + Upstash, zero backend runtime code
@@ -45,7 +46,8 @@ research pass missed — see D-012.
 `ride_match_duration_seconds` + `circuit_breaker_state` gauge). Correlation IDs threaded through
 `logger.js` via `AsyncLocalStorage` (`backend/utils/requestContext.js`) — every log line in a request now
 carries the same `requestId` automatically, and it's echoed back as an `X-Request-ID` response header. See
-D-014. Lint 0/0, tests 164/164, no regressions.
+D-014. Lint 0/0, tests 164/164, no regressions at the time — see the post-Layer-4 hardening note below for
+the current 173/173 baseline.
 - **Baseline being upgraded:** working MERN cab-aggregator, 578 backend tests (~72% coverage), real-time
   Socket.IO, geospatial matching, AES-256-GCM PII encryption, circuit-breaker graceful degradation.
 
@@ -92,7 +94,8 @@ D-014. Lint 0/0, tests 164/164, no regressions.
       - [x] Removed unused `redis` v4 dep; added `ioredis`, `@socket.io/redis-adapter`, `rate-limit-redis`.
       - [x] `scripts/seed.js`: duplicate-key on insert is now treated as "another instance won the race",
             not fatal — see P-004.
-      - [x] `npm run lint` 0/0; `npm test` 164/164 (163 existing + new `sessionManager-redis.test.js`).
+      - [x] `npm run lint` 0/0; `npm test` 164/164 (163 existing + new `sessionManager-redis.test.js`) at the
+            time — see the post-Layer-4 hardening note below for the current 173/173 baseline.
       - [x] **Gate run and passed** against real Upstash Redis + Atlas Mongo: two local `node server.js`
             instances, cross-instance Socket.IO room broadcast delivered, session survived an instance
             restart. Full writeup in `DECISIONS.md` ("Layer 2 gate — PASSED").
@@ -119,7 +122,8 @@ D-014. Lint 0/0, tests 164/164, no regressions.
             every call in a `finally` block, covering all existing early-return paths untouched.
       - [x] `backend/utils/requestContext.js`: `AsyncLocalStorage`-based correlation ID; `logger.js` stamps
             it onto every log line automatically; `requestLogger.js` echoes it as `X-Request-ID`.
-      - [x] `npm run lint` 0/0; `npm test` 164/164 — no regressions.
+      - [x] `npm run lint` 0/0; `npm test` 164/164 — no regressions (see the post-Layer-4 hardening note
+            below for the current 173/173 baseline).
       - [x] Local gate: smoke-tested `/metrics` (Prometheus format, all 3 custom metrics present via
             `supertest`) and correlation-ID propagation across an `await` (verified via standalone script).
       - [x] **Grafana Cloud wired and verified end-to-end:** `observability/alloy-config.alloy` +
@@ -128,6 +132,21 @@ D-014. Lint 0/0, tests 164/164, no regressions.
             metrics (732 samples sent, 0 failed) and cross-checked in Grafana Cloud Explore. Dashboard panels
             (p50/p95/p99 latency, request rate, error rate, circuit-breaker state) are documented with exact
             PromQL in `observability/README.md`, ready to build before Layer 5's README screenshots.
+
+**Post-Layer-4 hardening pass (P-008 → P-011, 2026-07-24)** — found and fixed while auditing for more
+P-007-style "looks wired up, silently isn't" bugs:
+- Real per-account-then-IP+account login lockout (`backend/utils/loginLockout.js`, Redis-backed with
+  in-memory fallback) replacing dead `bruteForceProtection`/`sessionHijackingDetection` code that referenced
+  a `req.session` this JWT-only app never populates (P-008 + follow-up).
+- `app.set('trust proxy', 1)` in `server.js` — Render's proxy meant `req.ip` was always `::1`, which had
+  silently collapsed the new IP+account lockout back to pure account-scoped (P-009).
+- Strengthened login/signup Joi validation (password complexity, name/license/vehicle field patterns) and
+  deleted a second, drifting copy of the same schemas in `middleware/validation.js` (P-010).
+- Phone format switched from E.164 to 10-digit, no `+`/country code, across backend validators, frontend
+  inputs, and test fixtures that exercise real validation (P-011).
+- Demo identities renamed (`demoRider1`/`demoDriver1`) and migrated live on Atlas via
+  `scripts/reset-demo-accounts.js`; documented in `README.md` (P-011 follow-up).
+- Current test baseline: backend **173/173**, frontend **59/59** (up from 164/59 at Layer 4).
 - [ ] Layer 5 — README-as-paper & resume bullets.
 
 ## Deployed system — quick reference (fill in as layers ship)
@@ -221,9 +240,31 @@ D-014. Lint 0/0, tests 164/164, no regressions.
   `backend/scripts/reencrypt-demo-accounts.js`; verified genuinely-encrypted-at-rest via the native MongoDB
   driver (bypassing Mongoose's own decrypt hooks, which had been masking the bug in earlier checks). Live
   login re-verified working. Full writeup in `DECISIONS.md`.
+- P-008 — Brute-force account lockout was dead code (referenced a `req.session` this JWT-only app never
+  populates); replaced with real account-scoped lockout on `User`.
+- P-008 (follow-up) — Account-scoped lockout let one attacker DoS the real user; moved to Redis-backed
+  IP+account-scoped lockout (`backend/utils/loginLockout.js`), superseding the `User`-schema fields.
+- P-009 — Live IP+account lockout still collapsed to account-only: Render's proxy meant `req.ip` was always
+  `::1`; fixed via `app.set('trust proxy', 1)`.
+- P-010 — Strengthened login/signup Joi validation; found and deleted a second, drifting copy of the same
+  schemas in `middleware/validation.js`.
+- P-011 — Phone format switched from E.164 to 10-digit (no `+`/country code) across backend validators,
+  frontend inputs, and real-path test fixtures.
+- P-011 (follow-up) — Demo identities renamed (`demoRider1`/`demoDriver1`) and migrated live on Atlas via
+  `scripts/reset-demo-accounts.js`; documented in `README.md`. Found (not removed) a stray 4th Atlas account.
+
+## Open items
+- P-009: live re-verification pending — confirm distinct client IPs for two different devices in Render's
+  logs after the `trust proxy` fix's next deploy.
+- Stray Atlas account: a 4th `users` document beyond admin/rider/driver (phone `4444444444`, name `"User"`,
+  the schema default) — almost certainly a throwaway manual test registration from the P-008/P-009 live
+  testing session, not seed data. Left alone pending the user's call on whether to delete it.
 
 ## How to resume
-1. Read this file, then `CLAUDE.md`. P-006 is closed — no action needed there.
+1. Read this file, then `CLAUDE.md`. P-006 is closed — no action needed there. The post-Layer-4 hardening
+   pass (P-008 → P-011, above) is also done and verified (173/173 backend, 59/59 frontend) — no action
+   needed unless picking up the two Open items above.
 2. Resume **Layer 5 — README-as-paper & defense** (pending approval, not yet started). Build only that
    layer, run its gate, update this file + `DECISIONS.md`, then STOP and ask for approval before anything
-   further.
+   further. The README must reflect the current demo credentials (`demoRider1`/`demoDriver1`), the 10-digit
+   phone format, the lockout story, and the 173/173 + 59/59 test baseline — not the Layer-4-era numbers.
