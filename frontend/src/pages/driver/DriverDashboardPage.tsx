@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSocket, useSocketEvent } from '../../contexts/SocketContext';
 import { useGeolocation } from '../../hooks/useGeolocation';
@@ -33,6 +33,10 @@ const DriverDashboardPage: React.FC = () => {
   const [route, setRoute] = useState<[number, number][] | null>(null);
   const [routeMetrics, setRouteMetrics] = useState<{ distanceKm: number; durationMin: number } | null>(null);
   const [acceptingRideId, setAcceptingRideId] = useState<string | null>(null);
+  // loadPendingRides is called from several places (mount, socket events,
+  // availability toggle, manual refresh) - responses can resolve out of
+  // order, so track the latest request and drop stale ones.
+  const pendingRidesRequestId = useRef(0);
 
   // Load initial data
   useEffect(() => {
@@ -168,6 +172,7 @@ const DriverDashboardPage: React.FC = () => {
   };
 
   const loadPendingRides = async () => {
+    const requestId = ++pendingRidesRequestId.current;
     try {
       const location = geolocation.latitude && geolocation.longitude
         ? [geolocation.longitude, geolocation.latitude] as [number, number]
@@ -175,6 +180,10 @@ const DriverDashboardPage: React.FC = () => {
 
       const rides = await rideService.getPendingRides(location);
       console.log('✅ Loaded pending rides:', rides);
+
+      if (requestId !== pendingRidesRequestId.current) {
+        return; // a newer request has since been issued - discard this stale result
+      }
 
       // Ensure rides is always an array
       if (Array.isArray(rides)) {
@@ -185,7 +194,9 @@ const DriverDashboardPage: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Failed to load pending rides:', err);
-      setPendingRides([]);
+      if (requestId === pendingRidesRequestId.current) {
+        setPendingRides([]);
+      }
     }
   };
 

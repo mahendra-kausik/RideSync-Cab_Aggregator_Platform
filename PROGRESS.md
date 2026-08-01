@@ -303,6 +303,12 @@ P-007-style "looks wired up, silently isn't" bugs:
   display (rider overlay, driver post-accept) fetches the real OSRM road distance. Added a small
   `RideDistance` subcomponent in `PendingRidesSection.tsx` that fetches OSRM per pending ride on mount,
   falling back to the Haversine field if the fetch fails. Frontend build clean, 59/59 tests pass.
+- P-015 — Fixed pending rides not appearing after turning availability on (only showed after an off/on
+  cycle). Root cause: `loadPendingRides` has 5 call sites (mount, socket event, toggle, accept-error
+  recovery, manual refresh) with no request sequencing — a slow, stale request from mount (issued while
+  still offline, legitimately empty) could resolve after a later correct request and overwrite it back to
+  `[]`. Added a `pendingRidesRequestId` ref counter so only the latest-issued request's result is applied
+  to state. Frontend build clean, 59/59 tests pass.
 
 ## Open items
 - ~~P-009: live re-verification~~ — **resolved**: confirmed live from two different devices; `trust proxy`

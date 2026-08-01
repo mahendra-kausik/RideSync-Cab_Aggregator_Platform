@@ -1312,3 +1312,32 @@
 - **Tradeoffs / risks:** One extra OSRM request per pending ride card per render of the pending list (not per
   poll — only on mount/ride-id change). Public OSRM demo server has no auth; acceptable at this traffic volume,
   same exposure already accepted for the rider and post-accept driver fetches.
+
+## P-015 — Newly-requested rides didn't appear after turning availability on until toggled off/on again
+- **Date / Layer:** 2026-08-01 / post-ship bugfix
+- **Context:** Rider requests a ride while the driver is offline. Driver then turns availability on and clicks
+  Refresh — the ride doesn't appear. Turning availability off then back on does show it.
+- **Root cause:** `DriverDashboardPage.loadPendingRides` is called from five independent triggers (mount's
+  `loadDashboardData`, the `ride:driver-assigned` socket handler, the availability toggle, Accept-Ride's error
+  recovery, and the manual Refresh button) with no request sequencing — whichever response arrives last wins,
+  not whichever request was issued last. On mount, while the driver is still offline, `loadPendingRides` fires
+  and legitimately gets an empty list back (the backend's `getPendingRides` returns `[]` for an unavailable
+  driver). If that request is slow (Render free-tier latency), and the driver toggles on shortly after, the
+  toggle's own fresh request can resolve *first* and correctly populate the list — then the earlier, slower,
+  stale empty response arrives and overwrites it back to `[]`. Manual Refresh clicks made in that window race
+  the same straggling first request and can lose the same way. Only once that stale request finally settles
+  does a later toggle/refresh reliably stick — matching the reported "off then on again" workaround. Same bug
+  class as P-013's Accept-Ride double-submit race (out-of-order promise resolution overwriting fresher state),
+  on a different code path.
+- **Decision:** Added a `pendingRidesRequestId` ref counter in `DriverDashboardPage`. `loadPendingRides`
+  captures the counter value at call time and only applies its result to state if the counter is unchanged
+  when the response arrives; a stale, out-of-order response is discarded instead of overwriting newer state.
+- **Why:** Root-causes the actual defect (no sequencing across concurrent callers) rather than papering over
+  one call site (e.g. debouncing the Refresh button) — the mount-time call, the socket handler, and the toggle
+  all needed the same protection since any pair can race.
+- **Alternatives considered:** A re-entrancy guard (block a new call while one is in flight, like
+  `acceptingRideId` for Accept Ride) — rejected here because `loadPendingRides` has legitimate reasons to be
+  called again before a prior slow call resolves (e.g. toggling on right after mount); blocking would drop
+  the newer, wanted request instead of the stale one. A sequence counter keeps every call live but only lets
+  the latest one's result stick.
+- **Tradeoffs / risks:** None — purely additive guard, no behavior change when calls don't overlap.
