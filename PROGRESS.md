@@ -298,6 +298,11 @@ P-007-style "looks wired up, silently isn't" bugs:
   banner on a ride that was, in fact, just accepted. Added an `acceptingRideId` guard in
   `DriverDashboardPage.handleAcceptRide` and disabled/relabeled the button in `PendingRidesSection` while a
   request is in flight. Frontend build clean, 59/59 tests pass (backend untouched this round).
+- P-014 — Fixed the "preview vs. final" distance gap P-013 explicitly left untouched: pending ride cards
+  (pre-accept) showed the Haversine `ride.estimatedDistance`/`estimatedDuration` while every other distance
+  display (rider overlay, driver post-accept) fetches the real OSRM road distance. Added a small
+  `RideDistance` subcomponent in `PendingRidesSection.tsx` that fetches OSRM per pending ride on mount,
+  falling back to the Haversine field if the fetch fails. Frontend build clean, 59/59 tests pass.
 
 ## Open items
 - ~~P-009: live re-verification~~ — **resolved**: confirmed live from two different devices; `trust proxy`

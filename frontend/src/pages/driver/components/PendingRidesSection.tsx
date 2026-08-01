@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Ride } from '../../../types';
 
 interface PendingRidesSectionProps {
@@ -8,6 +8,48 @@ interface PendingRidesSectionProps {
   onRefresh: () => void;
   acceptingRideId: string | null;
 }
+
+// Pending-list distance defaults to the Haversine estimate stored on the ride
+// at booking time; fetch the real OSRM road-route distance per card so it
+// matches what the rider sees and what this ride shows once accepted.
+const RideDistance: React.FC<{ ride: Ride }> = ({ ride }) => {
+  const [metrics, setMetrics] = useState<{ distanceKm: number; durationMin: number } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const pickup = ride.pickup.coordinates.coordinates;
+    const destination = ride.destination.coordinates.coordinates;
+
+    fetch(`https://router.project-osrm.org/route/v1/driving/${pickup[0]},${pickup[1]};${destination[0]},${destination[1]}?overview=false`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        const route0 = data.routes?.[0];
+        if (route0) {
+          setMetrics({ distanceKm: route0.distance / 1000, durationMin: route0.duration / 60 });
+        }
+      })
+      .catch((err) => console.error('Failed to fetch OSRM route for pending ride:', err));
+
+    return () => { cancelled = true; };
+  }, [ride._id]);
+
+  const distanceKm = metrics?.distanceKm ?? ride.estimatedDistance;
+  const durationMin = metrics?.durationMin ?? ride.estimatedDuration;
+
+  return (
+    <>
+      <div className="meta-item">
+        <span className="meta-label">Distance</span>
+        <span className="meta-value">{distanceKm.toFixed(1)} km</span>
+      </div>
+      <div className="meta-item">
+        <span className="meta-label">Est. Time</span>
+        <span className="meta-value">{Math.ceil(durationMin)} min</span>
+      </div>
+    </>
+  );
+};
 
 const PendingRidesSection: React.FC<PendingRidesSectionProps> = ({
   rides,
@@ -104,16 +146,7 @@ const PendingRidesSection: React.FC<PendingRidesSectionProps> = ({
                 </div>
 
                 <div className="ride-meta">
-                  <div className="meta-item">
-                    <span className="meta-label">Distance</span>
-                    <span className="meta-value">{ride.estimatedDistance.toFixed(1)} km</span>
-                  </div>
-                  <div className="meta-item">
-                    <span className="meta-label">Est. Time</span>
-                    <span className="meta-value">
-                      {Math.ceil(ride.estimatedDuration)} min
-                    </span>
-                  </div>
+                  <RideDistance ride={ride} />
                 </div>
               </div>
 

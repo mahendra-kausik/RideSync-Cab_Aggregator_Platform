@@ -1287,3 +1287,28 @@
   fix) is still a different, smaller number than the post-accept OSRM one — an intentional, pre-existing
   "preview vs. final" gap, not touched here.
 - **Supersedes:** P-012's distance-mismatch decision (item 1 only; items 2 and 3 of P-012 stand).
+
+## P-014 — Pending ride requests showed Haversine distance instead of OSRM road distance
+- **Date / Layer:** 2026-08-01 / post-ship UX fix (found while live-verifying P-013)
+- **Context:** Live screenshots showed the rider's booking overlay at 6.2 km, but the driver's pending-request
+  card for the *same ride* showed 3.7 km / 8 min — before acceptance only. After the driver accepted, the
+  active-ride card immediately corrected to 6.2 km.
+- **Root cause:** `ride.estimatedDistance`/`estimatedDuration` are the Haversine straight-line values computed
+  once server-side at booking (`rideController.js` `calculateDistance`/`estimateDuration`). Every other distance
+  display in the app (rider's booking overlay, driver's post-accept `ActiveRideSection`) fetches the real OSRM
+  road-route distance client-side for the same coordinate pair and displays that instead. `PendingRidesSection`
+  was the one remaining display rendering the raw Haversine field directly — flagged as a known, untouched gap
+  in P-013's tradeoffs section.
+- **Decision:** Added a small `RideDistance` subcomponent inside `PendingRidesSection.tsx` that fetches the
+  OSRM route for each pending ride's pickup/destination on mount (same URL pattern as
+  `DriverDashboardPage.fetchRoute`, `overview=false` since no polyline is needed for a card), and falls back to
+  `ride.estimatedDistance`/`estimatedDuration` if the fetch fails or hasn't resolved yet.
+- **Why:** Matches the pattern already used everywhere else in the app instead of introducing a new one;
+  scoped to the one component that was inconsistent rather than changing what `estimatedDistance` means
+  server-side (it's still legitimately used for matching radius Math and fare calc at booking time).
+- **Alternatives considered:** Fetching all pending rides' routes in `DriverDashboardPage` and passing a
+  distance map down — rejected, more state plumbing for the same result; per-card fetch keyed on `ride._id`
+  is simpler and the pending list is small (nearby rides only).
+- **Tradeoffs / risks:** One extra OSRM request per pending ride card per render of the pending list (not per
+  poll — only on mount/ride-id change). Public OSRM demo server has no auth; acceptable at this traffic volume,
+  same exposure already accepted for the rider and post-accept driver fetches.
