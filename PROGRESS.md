@@ -343,6 +343,20 @@ P-007-style "looks wired up, silently isn't" bugs:
   `backend/scripts/cleanup-accounts.js` (dry-run by default, `--apply` to write) to delete every account
   except admin + the two demo accounts, plus rides referencing deleted users — **not yet run**, needs the
   user to execute it against Atlas.
+- P-019 — Fixed the two items flagged (not fixed) at the end of P-017/P-018: profile edits bypassed PII
+  encryption, and admin user search always returned zero results. `updateProfile`/`updateDriverProfile`
+  used `findByIdAndUpdate`, which skips the `pre('save')` encryption hook — converted both to
+  fetch-then-`.save()`, matching the pattern `updateLocation`/`suspendUser` already used elsewhere in the
+  same file; also removes `updateDriverProfile`'s old `runValidators: false` workaround as a byproduct.
+  `getAllUsers`'s search used `$regex` against ciphertext (AES-256-GCM, random IV per value — confirmed
+  non-deterministic by reading `encryption.js`), which can never match; switched to fetching the
+  role/status-filtered set and matching in application code against the already-decrypted fields, with
+  a `ponytail:` comment on the unbounded `find()` given the small real dataset. Added 4 new integration
+  tests (none existed for either endpoint before): 2 confirm the raw Mongo document holds ciphertext
+  after a profile update, 2 confirm search finds/excludes correctly. Also had to mount `/api/users` in
+  `__tests__/helpers/testApp.js`, which wasn't wired into the test app at all. Backend 182/182, frontend
+  unaffected (re-ran lint/build as a safety net, unchanged). Full root-cause writeup and the
+  stale-`email_hash`-on-unset bug discovered (and left out of scope) in DECISIONS.md P-019.
 
 ## Open items
 - ~~P-009: live re-verification~~ — **resolved**: confirmed live from two different devices; `trust proxy`

@@ -1481,3 +1481,69 @@
   session will continue to silently switch that browser's active identity. The improved error message
   means the *symptom* is now legible ("Admin access required" instead of "Failed to load users"), but the
   behavior itself is unchanged.
+
+## P-019 — Profile edits bypassed PII encryption; admin user search was dead against ciphertext
+- **Date / Layer:** 2026-08-01 / post-ship bugfix
+- **Context:** Two issues flagged (not fixed) at the end of the P-017/P-018 session, now addressed at the
+  user's request. (A) Registration encrypts `profile.name`/`email`/`driverInfo.licenseNumber`/
+  `driverInfo.vehicleDetails.plateNumber` via a `pre('save')` hook, but editing a profile afterward
+  (`PUT /users/profile`, `PUT /users/driver/profile`) silently wrote those same fields back as
+  **plaintext**. (B) The admin "Search Users" box always returned zero results.
+- **Root cause (A):** `userController.updateProfile`/`updateDriverProfile` used `findByIdAndUpdate`,
+  which never triggers `pre('save')` — the hook only fires on `.save()`. No functional symptom exposed
+  this: `User.js`'s decrypt hooks (`post('find')`, `post('init')`, `toJSON`'s transform) each wrap
+  `decrypt()` in a try/catch that returns the original value unchanged on failure, so a plaintext value
+  fed through "decryption" just comes back as itself, silently. A full audit (grep across
+  `backend/controllers/*.js` for `findByIdAndUpdate`/`findOneAndUpdate`/`updateOne`/`updateMany` on
+  `User`) found these were the **only two** call sites touching a `PII_FIELDS` path; `updateLocation`,
+  `updateAvailability`, and `paymentController`'s rating update only touch non-PII fields and were left
+  alone. `updateLocation`/`toggleAvailability` (`User.js` instance methods) and `suspendUser`/
+  `reactivateUser` (`userController.js`) already used the correct fetch-then-`.save()` shape — the
+  pattern to match already existed in the same file.
+- **Root cause (B):** `getAllUsers`'s `search` param built a `$regex` filter against `profile.name`,
+  `email`, `phone` (`userController.js`, pre-fix). Those fields are AES-256-GCM ciphertext at rest with a
+  **random IV per encryption** (confirmed by reading `encryption.js` directly: `crypto.randomBytes` per
+  call) — re-encrypting the same plaintext never produces the same ciphertext twice, so no query-level
+  regex or exact match against the stored value can ever work. `phone_hash`/`email_hash` (deterministic
+  SHA-256) only support **exact**-value lookup, not substring, and no field exists for partial search.
+  Decryption already happens automatically on every `User.find()` via the `post('find')`/`post('init')`
+  hooks, so a fetched document already holds plaintext in memory once the query runs.
+- **Decision:**
+  1. Converted both `updateProfile` and `updateDriverProfile` to fetch-then-`.save()`
+     (`User.findById` → mutate loaded document paths directly → `user.save()`), matching the existing
+     `updateLocation`/`suspendUser` pattern. This also removed `updateDriverProfile`'s
+     `runValidators: false` workaround (the comment explained it was needed because Mongoose
+     update-validators break the embedded vehicle/driver subschemas' `this.parent().role === 'driver'`
+     required-checks) — a genuine `.save()` resolves `this.parent()` correctly on a real document, so the
+     wart disappears as a byproduct rather than needing a separate fix.
+  2. `getAllUsers`: when `search` is present, fetch the role/status-filtered set (no `$regex`), then
+     filter in application code with a plain case-insensitive `.includes()` substring check against the
+     already-decrypted `profile.name`/`email`/`phone`, then paginate the filtered array. The no-search
+     path is untouched (still a pure DB-level query — zero behavior change for the common case). Marked
+     the unbounded `find()` with a `ponytail:` comment naming the ceiling (fine at this app's actual
+     scale — 3 demo accounts + hand-registered signups; revisit with a real search index if that
+     changes).
+- **Why:** Fetch-then-save is the smallest change that routes PII writes through the *one* place that
+  already knows how to encrypt them and regenerate `phone_hash`/`email_hash` correctly, rather than
+  duplicating that logic (encrypt + re-hash) at every call site. In-memory filtering for search is the
+  only option once the ciphertext is confirmed non-deterministic — there is no query-level substring
+  match possible against AES-GCM output without a dedicated searchable-encryption scheme, which is out of
+  scope for what this endpoint needs.
+- **Alternatives considered:** For (A), manually calling `encryptionUtils.encrypt()` before a
+  `findByIdAndUpdate` — rejected: it would still miss the `phone_hash`/`email_hash` regeneration that
+  `pre('save')` handles, and would duplicate hook logic at two call sites instead of reusing it.
+  For (B), a blind/deterministic search index (e.g. a separate hashed n-gram field) — rejected as
+  disproportionate to the actual dataset size and not requested; the plain in-memory filter is correct
+  and adequate here.
+- **Unplanned discovery, left out of scope:** the audit surfaced that neither PII call site ever
+  recomputed `email_hash` after an email change, and `updateDriverProfile`'s email-unset path leaves an
+  orphaned `email_hash` pointing at the deleted address — pre-existing under the old `findByIdAndUpdate`
+  code too, not introduced by this fix. The fetch-then-save conversion incidentally **fixes the
+  change-email case** for free (`pre('save')`'s `isModified('email') && this.email` guard now fires
+  correctly), but the **unset-email case still leaves a stale `email_hash`** (same guard skips
+  regeneration when `this.email` is falsy) — that would need an explicit `else` branch in `User.js`'s
+  shared pre-save hook, which touches every save path in the app, not just these two controllers. Left
+  unfixed as a distinct, pre-existing bug outside what was asked for; flagged here for future work.
+- **Tradeoffs / risks:** `getAllUsers`'s search path now does an unbounded `User.find()` when a `search`
+  term is present, instead of DB-level pagination — acceptable at current scale (dozens of users at
+  most), would need revisiting if the user base grows substantially.

@@ -11,6 +11,7 @@ module.exports = function createTestApp() {
     // Mount routes (middle-wares within routes will be applied as authored)
     app.use('/api/auth', require('../../routes/auth'));
     app.use('/api/rides', require('../../routes/rides'));
+    app.use('/api/users', require('../../routes/users'));
 
     // Basic not-found handler for tests
     app.use('*', (req, res) => {
