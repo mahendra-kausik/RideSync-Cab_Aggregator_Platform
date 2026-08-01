@@ -23,7 +23,9 @@ const RideDistance: React.FC<{ ride: Ride }> = ({ ride }) => {
     fetch(`https://router.project-osrm.org/route/v1/driving/${pickup[0]},${pickup[1]};${destination[0]},${destination[1]}?overview=false`)
       .then((res) => res.json())
       .then((data) => {
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
         const route0 = data.routes?.[0];
         if (route0) {
           setMetrics({ distanceKm: route0.distance / 1000, durationMin: route0.duration / 60 });
@@ -31,7 +33,9 @@ const RideDistance: React.FC<{ ride: Ride }> = ({ ride }) => {
       })
       .catch((err) => console.error('Failed to fetch OSRM route for pending ride:', err));
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [ride._id]);
 
   const distanceKm = metrics?.distanceKm ?? ride.estimatedDistance;
