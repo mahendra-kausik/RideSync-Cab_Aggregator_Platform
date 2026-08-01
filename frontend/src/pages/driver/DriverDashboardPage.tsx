@@ -29,7 +29,6 @@ const DriverDashboardPage: React.FC = () => {
   const [activeRide, setActiveRide] = useState<Ride | null>(null);
   const [driverStats, setDriverStats] = useState<DriverStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [locationSharing, setLocationSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [route, setRoute] = useState<[number, number][] | null>(null);
   const [routeMetrics, setRouteMetrics] = useState<{ distanceKm: number; durationMin: number } | null>(null);
@@ -83,9 +82,9 @@ const DriverDashboardPage: React.FC = () => {
     fetchRoute();
   }, [activeRide]);
 
-  // Handle location updates
+  // Handle location updates - flows automatically whenever a ride is active
   useEffect(() => {
-    if (locationSharing && geolocation.latitude && geolocation.longitude && activeRide) {
+    if (geolocation.latitude && geolocation.longitude && activeRide) {
       // Update location in database
       driverService.updateLocation({
         latitude: geolocation.latitude,
@@ -97,7 +96,7 @@ const DriverDashboardPage: React.FC = () => {
       // Emit real-time location update
       emitDriverLocationUpdate(activeRide._id, [geolocation.longitude, geolocation.latitude]);
     }
-  }, [geolocation.latitude, geolocation.longitude, locationSharing, activeRide, emitDriverLocationUpdate]);
+  }, [geolocation.latitude, geolocation.longitude, activeRide, emitDriverLocationUpdate]);
 
   // Join/leave Socket ride room based on active ride
   useEffect(() => {
@@ -123,7 +122,6 @@ const DriverDashboardPage: React.FC = () => {
       if (data.status === 'cancelled' || data.status === 'completed') {
         // Remote status change (e.g., rider cancelled) – clear active ride and refresh
         setActiveRide(null);
-        setLocationSharing(false);
         // Refresh dashboard to sync availability and pending rides
         loadDashboardData();
       } else {
@@ -220,7 +218,6 @@ const DriverDashboardPage: React.FC = () => {
         await loadPendingRides();
       } else {
         setPendingRides([]);
-        setLocationSharing(false);
       }
     } catch (err: any) {
       setError(err.message);
@@ -233,7 +230,6 @@ const DriverDashboardPage: React.FC = () => {
       const acceptedRide = await rideService.acceptRide(rideId);
       setActiveRide(acceptedRide);
       setPendingRides([]);
-      setLocationSharing(true);
       // Update user availability to false after accepting
       if (user?.driverInfo) {
         const updatedUser = { ...user, driverInfo: { ...user.driverInfo, isAvailable: false } };
@@ -258,7 +254,6 @@ const DriverDashboardPage: React.FC = () => {
 
       if (status === 'completed' || status === 'cancelled') {
         setActiveRide(null);
-        setLocationSharing(false);
         await loadDashboardData();
       }
     } catch (err: any) {
@@ -342,11 +337,6 @@ const DriverDashboardPage: React.FC = () => {
             <ActiveRideSection
               ride={activeRide}
               onStatusUpdate={handleRideStatusUpdate}
-              locationSharing={locationSharing}
-              onLocationSharingToggle={setLocationSharing}
-              driverLocation={geolocation.latitude && geolocation.longitude
-                ? [geolocation.longitude, geolocation.latitude]
-                : null}
               distanceKm={routeMetrics?.distanceKm}
             />
           ) : (

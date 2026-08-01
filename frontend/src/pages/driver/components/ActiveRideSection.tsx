@@ -4,9 +4,6 @@ import { Ride } from '../../../types';
 interface ActiveRideSectionProps {
   ride: Ride;
   onStatusUpdate: (status: Ride['status']) => void;
-  locationSharing: boolean;
-  onLocationSharingToggle: (enabled: boolean) => void;
-  driverLocation: [number, number] | null;
   // Optional: distance calculated from OSRM route (in km)
   distanceKm?: number;
 }
@@ -14,11 +11,10 @@ interface ActiveRideSectionProps {
 const ActiveRideSection: React.FC<ActiveRideSectionProps> = ({
   ride,
   onStatusUpdate,
-  locationSharing,
-  onLocationSharingToggle,
-  driverLocation,
   distanceKm
 }) => {
+  const rider = typeof ride.riderId === 'object' ? ride.riderId : null;
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -105,21 +101,16 @@ const ActiveRideSection: React.FC<ActiveRideSectionProps> = ({
           )}
         </div>
 
-        <div className="location-sharing">
-          <label className="location-toggle">
-            <input
-              type="checkbox"
-              checked={locationSharing}
-              onChange={(e) => onLocationSharingToggle(e.target.checked)}
-            />
-            <span>Share location with rider</span>
-          </label>
-          {locationSharing && driverLocation && (
-            <small className="location-status">
-              📍 Location sharing active
-            </small>
-          )}
-        </div>
+        {rider && (
+          <div className="contact-info">
+            <div className="info-item">
+              <strong>Rider:</strong> {rider.profile.name}
+            </div>
+            <div className="info-item">
+              <strong>Phone:</strong> <a href={`tel:${rider.phone}`}>{rider.phone}</a>
+            </div>
+          </div>
+        )}
 
         <div className="ride-actions">
           {getStatusActions()}

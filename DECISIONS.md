@@ -1172,3 +1172,32 @@
 - **Tradeoffs / risks:** Omitting coverage invites the interview question "what's your coverage?"; the honest
   answer (~32%, concentrated on auth/fare/matching/lockout core logic) is defensible and is recorded here.
 - **Supersedes:** the README's prior test/coverage/stack claims (no prior D-entry).
+
+---
+
+## D-017 — Made in-ride contact mutual; removed the driver's "share location" toggle
+- **Date / Layer:** 2026-08-01 / post-ship UX fix
+- **Context:** After a driver accepted a ride, the rider already saw the driver's name/phone/vehicle
+  (`RiderBookPage.tsx`), but the reverse never existed — `ActiveRideSection.tsx` never read `ride.riderId`
+  even though the backend already populated `profile.name phone` on it for every ride-fetch endpoint
+  (`rideController.js` acceptRide/getActiveRide). Separately, the driver dashboard had a client-side-only
+  "Share location with rider" checkbox (`locationSharing` state), unenforced by the backend
+  (`socketService.js` broadcasts location unconditionally) and buggy: it initialized to `false` and was
+  only set `true` inside `handleAcceptRide`, so a page reload mid-ride silently stopped the rider's live
+  tracking with no indication why.
+- **Decision:** (1) Surface `ride.riderId`'s name + tappable phone in the driver's active-ride card,
+  mirroring the existing rider-side display — pending (unaccepted) ride cards stay anonymous, contact is
+  revealed only after accept. (2) Delete the location-sharing toggle entirely; the driver's location now
+  flows to the rider automatically for the whole lifetime of an active ride (gated only on `activeRide`
+  existing), no opt-out.
+- **Why:** Symmetric contact info is expected UX once two parties are matched for a ride. The toggle was a
+  privacy control in name only — never enforced server-side — while actively causing an unrelated tracking
+  bug (silent stop on reload); a rider tracking their in-progress ride is closer to a safety expectation
+  than an opt-in feature, and removing the toggle is strictly fewer moving parts.
+- **Alternatives considered:** Wire a real, server-enforced `shareLocation` flag (add a `Ride`/`User` field,
+  gate the `socketService.js` broadcast on it) — rejected as scope the user didn't ask for and against the
+  product decision that tracking should be mandatory during an active ride, not optional.
+- **Tradeoffs / risks:** Drivers can no longer withhold live location from a matched rider for the ride's
+  duration. Backend already returns rider/driver PII (name+phone) on every populated ride fetch — no new
+  encryption/decryption path was added, this only changes what the frontend renders.
+- **Supersedes:** none (the toggle had no prior D-entry).

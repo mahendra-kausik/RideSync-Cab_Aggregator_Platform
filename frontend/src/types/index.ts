@@ -61,8 +61,8 @@ export interface Location {
 
 export interface Ride {
   _id: string;
-  riderId: string;
-  driverId?: string;
+  riderId: string | User;
+  driverId?: string | User;
   status: 'requested' | 'matched' | 'accepted' | 'in_progress' | 'completed' | 'cancelled';
   pickup: Location;
   destination: Location;

@@ -122,7 +122,8 @@
     display: none;
   }
 
-  .user-info {
+  .user-role,
+  .driver-status {
     display: none;
   }
 

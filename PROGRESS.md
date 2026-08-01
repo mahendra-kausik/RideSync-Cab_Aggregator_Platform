@@ -272,6 +272,10 @@ P-007-style "looks wired up, silently isn't" bugs:
   frontend inputs, and real-path test fixtures.
 - P-011 (follow-up) — Demo identities renamed (`demoRider1`/`demoDriver1`) and migrated live on Atlas via
   `scripts/reset-demo-accounts.js`; documented in `README.md`. Found (not removed) a stray 4th Atlas account.
+- D-017 — Driver's active-ride card now shows the rider's name + phone (mirrors the existing rider→driver
+  display; backend already populated this data). Removed the unenforced, buggy "share location" toggle —
+  location now flows to the rider for the whole active-ride lifetime, no opt-out. Header username visible
+  on mobile again (was hidden below 768px). Frontend build clean, 59/59 frontend tests pass.
 
 ## Open items
 - ~~P-009: live re-verification~~ — **resolved**: confirmed live from two different devices; `trust proxy`

@@ -292,30 +292,19 @@
   color: #2c3e50;
 }
 
-.location-sharing {
+.contact-info {
   margin-bottom: 20px;
   padding: 12px;
   background-color: #e7f3ff;
   border-radius: 8px;
 }
 
-.location-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  user-select: none;
+.contact-info .info-item {
+  margin-bottom: 4px;
 }
 
-.location-toggle input {
-  margin: 0;
-}
-
-.location-status {
-  display: block;
-  margin-top: 8px;
-  color: #28a745;
-  font-weight: 500;
+.contact-info .info-item:last-child {
+  margin-bottom: 0;
 }
 
 .ride-actions {
