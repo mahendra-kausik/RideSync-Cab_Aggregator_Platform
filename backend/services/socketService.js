@@ -1,5 +1,6 @@
 const AuthUtils = require('../utils/auth');
 const { User, Ride } = require('../models');
+const { presence: presenceConfig } = require('../config/security');
 
 /**
  * Socket.IO Service for Real-time Communication
@@ -12,6 +13,7 @@ class SocketService {
     this.io = null;
     this.connectedUsers = new Map(); // userId -> socketId mapping
     this.userSockets = new Map(); // socketId -> user data mapping
+    this.pendingAvailabilityWipes = new Map(); // userId -> setTimeout handle, for the disconnect grace period
   }
 
   /**
@@ -68,6 +70,14 @@ class SocketService {
     const userRole = socket.userRole;
 
     console.log(`🔌 User connected: ${userId} (${userRole}) - Socket: ${socket.id}`);
+
+    // Cancel any pending "mark unavailable" wipe from a recent disconnect -
+    // this reconnect is within the grace period, so it wasn't a real drop.
+    const pendingWipe = this.pendingAvailabilityWipes.get(userId);
+    if (pendingWipe) {
+      clearTimeout(pendingWipe);
+      this.pendingAvailabilityWipes.delete(userId);
+    }
 
     // Store user connection mapping
     this.connectedUsers.set(userId, socket.id);
@@ -421,10 +431,19 @@ class SocketService {
     }
     this.connectedUsers.delete(userId);
 
-    // If driver disconnects, update availability to false
+    // If a driver disconnects, wait out a grace period before marking them
+    // unavailable - a reconnect within that window (handleConnection above)
+    // cancels this, so a network blip or a frontend socket re-init doesn't
+    // silently strand the driver as unavailable with no way back but the
+    // toggle. A driver who's genuinely gone (tab closed, no reconnect) still
+    // ends up unavailable once the timer fires.
     if (userRole === 'driver') {
-      User.findByIdAndUpdate(userId, { 'driverInfo.isAvailable': false })
-        .catch(error => console.error('Error updating driver availability on disconnect:', error));
+      const timer = setTimeout(() => {
+        this.pendingAvailabilityWipes.delete(userId);
+        User.findByIdAndUpdate(userId, { 'driverInfo.isAvailable': false })
+          .catch(error => console.error('Error updating driver availability on disconnect:', error));
+      }, presenceConfig.driverDisconnectGraceMs);
+      this.pendingAvailabilityWipes.set(userId, timer);
     }
   }
 

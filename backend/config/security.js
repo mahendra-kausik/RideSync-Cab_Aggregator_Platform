@@ -25,6 +25,15 @@ const securityConfig = {
     cleanupIntervalMinutes: 60
   },
 
+  // Socket.IO presence
+  presence: {
+    // A driver socket can drop and reconnect for reasons unrelated to actually
+    // going offline (network blip, a frontend re-render tearing the socket
+    // down and recreating it). Don't mark the driver unavailable until they've
+    // been disconnected for this long with no reconnect.
+    driverDisconnectGraceMs: 30 * 1000
+  },
+
   // Rate limiting
   rateLimiting: {
     // Authentication endpoints

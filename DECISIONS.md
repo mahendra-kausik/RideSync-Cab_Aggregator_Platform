@@ -1341,3 +1341,62 @@
   the newer, wanted request instead of the stale one. A sequence counter keeps every call live but only lets
   the latest one's result stick.
 - **Tradeoffs / risks:** None — purely additive guard, no behavior change when calls don't overlap.
+
+## P-016 — P-015 misdiagnosed the pending-rides bug; real cause was a socket-driven DB wipe of availability. Also fixed a false "Failed to update ride status" error on Start Ride.
+- **Date / Layer:** 2026-08-01 / post-ship bugfix
+- **Context:** P-015's request-sequencing fix did not resolve the reported bug — pending rides still
+  didn't appear after turning availability on or clicking Refresh, only after an off/on cycle. Separately,
+  clicking **Start Ride** showed "Failed to update ride status" even though the ride visibly transitioned
+  to `IN PROGRESS` with a `Started:` timestamp.
+- **Root cause 1 (pending rides, supersedes P-015's diagnosis):** `handleAvailabilityToggle` calls
+  `updateUser(updatedUser)`, which — via `AuthContext`'s `UPDATE_USER` reducer — replaces the `user` object
+  with a **new reference** every time. `SocketContext.tsx`'s connection effect depended on that whole
+  object (`[isAuthenticated, token, user]`), so **every availability toggle tore down and recreated the
+  driver's socket**. The backend's `socketService.handleDisconnection` treats any driver disconnect as
+  "gone offline" and immediately writes `driverInfo.isAvailable: false` to Mongo (fire-and-forget, racing
+  the in-flight `GET /rides/driver/pending`, and usually winning). `getPendingRides` re-reads the user
+  fresh from the DB every request and gates on that flag — so it silently returned an empty list with a
+  200, no error, no signal. Nothing on reconnect ever restored the flag, so it stayed wiped until another
+  toggle happened to land differently (see `socketService.js`'s `isCurrentSocket` guard — ordering-dependent,
+  which is why a *second* toggle cycle "worked"). This is also what left `demoDriver1` stuck `isAvailable:
+  false` in Atlas, noted back in P-012.
+- **Root cause 2 (false error on Start Ride), two independent defects:**
+  1. `rideService.ts`'s `updateRideStatus` read `error.response?.data?.error?.message` in its catch block,
+     but `apiClient.ts`'s interceptor never rejects with an `AxiosError` — it rejects with a flat
+     `{ code, message, statusCode }`. `error.response` is always `undefined`, so **every** failure (400,
+     409, 500, timeout) rendered the same generic string, discarding the real backend message.
+     `acceptRide` already had the corrected pattern (`error.code`/`error.message` directly, with an
+     explicit comment); `updateRideStatus` was never given the same fix.
+  2. `handleRideStatusUpdate` had no in-flight guard (unlike `handleAcceptRide`, hardened in P-013 for the
+     identical class of bug). The backend broadcasts `ride:status-change` via `io.to(room)` — which
+     includes the *sender's own socket* — before responding, so the status badge updates from the socket
+     event independent of the HTTP response. A double-click (or a slow first response) sends two PUTs: the
+     first succeeds and flips the badge; the second hits the backend's atomic status guard and gets a
+     legitimate 409, which then rendered as the same swallowed generic error message alongside a ride that
+     had, in fact, just started successfully.
+- **Decision:**
+  1. `SocketContext.tsx`: depend on `user?._id`/`user?.role` (identity) instead of the whole `user` object,
+     so a profile/availability update no longer recreates the socket.
+  2. `socketService.js`: replace the immediate disconnect wipe with a **grace-period timer**
+     (`config/security.js` → `presence.driverDisconnectGraceMs`, 30s) — `handleConnection` cancels any
+     pending wipe for that driver on reconnect. A driver who's genuinely gone (closed tab, no reconnect)
+     still ends up unavailable once the timer fires; a blip or a frontend re-init no longer can.
+  3. `rideService.ts`: fixed `updateRideStatus`'s error handling to match `acceptRide`'s corrected pattern.
+  4. `DriverDashboardPage.tsx`/`ActiveRideSection.tsx`: added an `updatingStatus` in-flight guard on Start/
+     Complete/Cancel Ride, same shape as `acceptingRideId`.
+- **Why:** Fix (1)+(2) together, not just (1) alone — (1) removes the *spurious* churn this bug depends on,
+  but a real network drop would still silently strand a driver unavailable with no restore path (the
+  behavior that produced the `demoDriver1` incident). (2) closes that gap without removing the "driver
+  went offline" signal entirely — no acceptance timeout or auto-reassignment exists elsewhere in the
+  matching flow, and logout is client-side only, so a driver who just closes the tab still needs to stop
+  being matched eventually.
+- **Alternatives considered:** For the presence fix, blocking on a re-entrancy guard instead of a grace
+  timer — rejected, would need an explicit heartbeat/keepalive mechanism that doesn't exist here, and a
+  fixed grace window is a smaller change that directly targets the observed failure mode (fast churn, not
+  slow drift). For the double-submit guard, matched the existing `acceptingRideId` pattern rather than
+  inventing a new one.
+- **Tradeoffs / risks:** A driver who closes their laptop mid-shift stays "available" (and matchable) for
+  up to 30s longer than before — acceptable; `assignRideToDriver`'s existing atomic guard and the driver's
+  own Accept-Ride flow still protect against assigning a ride to someone who can't actually take it.
+- **Supersedes:** P-015's diagnosis of the pending-rides bug (P-015's request-sequencing guard is
+  unaffected and stays — it protects a real, separate out-of-order race).

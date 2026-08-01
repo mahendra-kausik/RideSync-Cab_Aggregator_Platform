@@ -281,7 +281,14 @@ class RideService {
       }
     } catch (error: any) {
       console.error('Update ride status error:', error);
-      throw new Error(error.response?.data?.error?.message || 'Failed to update ride status');
+
+      // apiClient's response interceptor already unwraps axios errors into a
+      // flat { code, message } shape, so check that directly (not error.response).
+      if (error.code === 'STATUS_UPDATE_CONFLICT') {
+        throw new Error('This ride was already updated by another request. Refresh to see its current status.');
+      }
+
+      throw new Error(error.message || 'Failed to update ride status');
     }
   }
 

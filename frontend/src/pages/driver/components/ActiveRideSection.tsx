@@ -6,12 +6,16 @@ interface ActiveRideSectionProps {
   onStatusUpdate: (status: Ride['status']) => void;
   // Optional: distance calculated from OSRM route (in km)
   distanceKm?: number;
+  // True while a status-update request is in flight - disables the action
+  // buttons so a double-click can't fire two requests for the same transition.
+  updatingStatus?: boolean;
 }
 
 const ActiveRideSection: React.FC<ActiveRideSectionProps> = ({
   ride,
   onStatusUpdate,
-  distanceKm
+  distanceKm,
+  updatingStatus
 }) => {
   const rider = typeof ride.riderId === 'object' ? ride.riderId : null;
 
@@ -30,8 +34,9 @@ const ActiveRideSection: React.FC<ActiveRideSectionProps> = ({
           <button
             className="btn btn-primary"
             onClick={() => onStatusUpdate('in_progress')}
+            disabled={updatingStatus}
           >
-            Start Ride
+            {updatingStatus ? 'Starting...' : 'Start Ride'}
           </button>
         );
       case 'in_progress':
@@ -39,8 +44,9 @@ const ActiveRideSection: React.FC<ActiveRideSectionProps> = ({
           <button
             className="btn btn-success"
             onClick={() => onStatusUpdate('completed')}
+            disabled={updatingStatus}
           >
-            Complete Ride
+            {updatingStatus ? 'Completing...' : 'Complete Ride'}
           </button>
         );
       default:
@@ -117,6 +123,7 @@ const ActiveRideSection: React.FC<ActiveRideSectionProps> = ({
           <button
             className="btn btn-outline btn-danger"
             onClick={() => onStatusUpdate('cancelled')}
+            disabled={updatingStatus}
           >
             Cancel Ride
           </button>

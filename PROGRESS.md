@@ -309,6 +309,21 @@ P-007-style "looks wired up, silently isn't" bugs:
   still offline, legitimately empty) could resolve after a later correct request and overwrite it back to
   `[]`. Added a `pendingRidesRequestId` ref counter so only the latest-issued request's result is applied
   to state. Frontend build clean, 59/59 tests pass.
+- P-016 — **P-015 misdiagnosed the pending-rides bug** — its request-sequencing fix was real but didn't
+  fix the reported symptom. Actual cause: toggling availability calls `updateUser`, which gives the `user`
+  object a new reference every time; `SocketContext`'s connect effect depended on that whole object, so
+  **every toggle tore down and recreated the driver's socket**. The backend treats any driver disconnect
+  as "gone offline" and immediately wipes `driverInfo.isAvailable` in Mongo, racing (and usually beating)
+  the in-flight pending-rides fetch — with nothing to restore it on reconnect. Fixed by (1) depending on
+  `user?._id`/`user?.role` instead of the object in `SocketContext`, and (2) replacing the backend's
+  immediate wipe with a 30s reconnect grace period (`config/security.js` → `presence.driverDisconnectGraceMs`)
+  so a real drop still marks the driver unavailable but a blip/re-init doesn't. This is also what caused
+  `demoDriver1`'s stuck-`false` availability noted back in P-012. Separately fixed the false "Failed to
+  update ride status" error on Start Ride: `updateRideStatus` read the wrong error shape (same bug class
+  `acceptRide` was already fixed for) so every failure showed a generic message, and `handleRideStatusUpdate`
+  had no double-submit guard (same class as P-13's Accept Ride fix) so a double-click could show a stale
+  409 error on a ride that had, in fact, just started. Added a small `socketService-presence.test.js` unit
+  test (fake timers) covering the grace-period behavior. Backend 176/176, frontend build clean, 59/59 tests.
 
 ## Open items
 - ~~P-009: live re-verification~~ — **resolved**: confirmed live from two different devices; `trust proxy`

@@ -33,6 +33,7 @@ const DriverDashboardPage: React.FC = () => {
   const [route, setRoute] = useState<[number, number][] | null>(null);
   const [routeMetrics, setRouteMetrics] = useState<{ distanceKm: number; durationMin: number } | null>(null);
   const [acceptingRideId, setAcceptingRideId] = useState<string | null>(null);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
   // loadPendingRides is called from several places (mount, socket events,
   // availability toggle, manual refresh) - responses can resolve out of
   // order, so track the latest request and drop stale ones.
@@ -265,11 +266,16 @@ const DriverDashboardPage: React.FC = () => {
   };
 
   const handleRideStatusUpdate = async (status: Ride['status']) => {
-    if (!activeRide) {
+    // Guard against a double-click firing this twice before the first request
+    // resolves - the second call would always 409 even though the first one
+    // already succeeded (same class of race as handleAcceptRide above).
+    if (!activeRide || updatingStatus) {
       return;
     }
 
     try {
+      setUpdatingStatus(true);
+      setError(null);
       const updatedRide = await rideService.updateRideStatus(activeRide._id, status);
       setActiveRide(updatedRide);
 
@@ -279,6 +285,8 @@ const DriverDashboardPage: React.FC = () => {
       }
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setUpdatingStatus(false);
     }
   };
 
@@ -359,6 +367,7 @@ const DriverDashboardPage: React.FC = () => {
               ride={activeRide}
               onStatusUpdate={handleRideStatusUpdate}
               distanceKm={routeMetrics?.distanceKm}
+              updatingStatus={updatingStatus}
             />
           ) : (
             /* Pending Rides Section */

@@ -24,16 +24,21 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const { isAuthenticated, token, user } = useAuth();
   // Track rooms we intend to be in so we can rejoin on reconnect
   const pendingRideRoomsRef = useRef<Set<string>>(new Set());
+  // Depend on identity, not the user object reference - updateUser() (e.g. after
+  // toggling driver availability) replaces the object every time, which would
+  // otherwise tear down and recreate a perfectly healthy socket on every toggle.
+  const userId = user?._id;
+  const userRole = user?.role;
 
   useEffect(() => {
-    if (isAuthenticated && token && user) {
+    if (isAuthenticated && token && userId) {
       // Initialize socket connection
       const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
       const newSocket = io(socketUrl, {
         auth: {
           token: token,
-          userId: user._id,
-          role: user.role,
+          userId: userId,
+          role: userRole,
         },
         transports: ['websocket', 'polling'],
       });
@@ -84,7 +89,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         setIsConnected(false);
       }
     }
-  }, [isAuthenticated, token, user]);
+  }, [isAuthenticated, token, userId, userRole]);
 
   // Join ride room
   const joinRideRoom = (rideId: string) => {
