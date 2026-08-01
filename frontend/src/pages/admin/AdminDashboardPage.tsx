@@ -61,7 +61,7 @@ const AdminDashboardPage: React.FC = () => {
             setRecentRides(ridesData.data);
         } catch (err: any) {
             console.error('Failed to load dashboard data:', err);
-            setError(err.response?.data?.error?.message || 'Failed to load dashboard data');
+            setError(err.message || 'Failed to load dashboard data');
         } finally {
             setLoading(false);
         }
@@ -77,7 +77,7 @@ const AdminDashboardPage: React.FC = () => {
             await loadDashboardData(); // Refresh data
         } catch (err: any) {
             console.error(`Failed to ${action} user:`, err);
-            setError(err.response?.data?.error?.message || `Failed to ${action} user`);
+            setError(err.message || `Failed to ${action} user`);
         }
     };
 

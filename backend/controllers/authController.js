@@ -90,19 +90,7 @@ const otpVerificationSchema = Joi.object({
       'string.min': 'Password must be at least 8 characters long',
       'string.max': 'Password cannot exceed 128 characters',
       'string.pattern.base': 'Password must contain at least one letter and one number'
-    }),
-  tempUserData: Joi.object({
-    phone: Joi.string().optional(),
-    name: Joi.string().optional(),
-    role: Joi.string().valid('rider', 'driver').optional(),
-    licenseNumber: Joi.string().optional(),
-    vehicleDetails: Joi.object({
-      make: Joi.string().optional(),
-      model: Joi.string().optional(),
-      plateNumber: Joi.string().optional(),
-      color: Joi.string().optional()
-    }).optional()
-  }).optional()
+    })
 });
 
 const emailLoginSchema = Joi.object({
@@ -162,21 +150,21 @@ const registerPhone = async (req, res) => {
       });
     }
 
-    // Generate and store OTP
-    const { otp, expiresAt } = await OTP.createOTP(phone);
-
-    // Simulate SMS sending by logging to console (as per requirements)
-    console.log(`📱 SMS Simulation - OTP for ${phone}: ${otp}`);
-    console.log(`⏰ OTP expires at: ${expiresAt}`);
-
-    // Store user data temporarily in session/cache (for demo, we'll include in response)
-    // In production, this would be stored in Redis or similar
-    const tempUserData = {
-      phone,
+    // Registration data (name/role/driver details) is stored on the OTP document
+    // itself and consumed at verify-otp - it never round-trips through the client,
+    // so it can't be dropped by an environment-gated response (see P-017).
+    const pendingRegistration = {
       name,
       role,
       ...(role === 'driver' && { licenseNumber, vehicleDetails })
     };
+
+    // Generate and store OTP
+    const { otp, expiresAt } = await OTP.createOTP(phone, pendingRegistration);
+
+    // Simulate SMS sending by logging to console (as per requirements)
+    console.log(`📱 SMS Simulation - OTP for ${phone}: ${otp}`);
+    console.log(`⏰ OTP expires at: ${expiresAt}`);
 
     res.status(200).json({
       success: true,
@@ -184,9 +172,7 @@ const registerPhone = async (req, res) => {
       data: {
         phone,
         otpSent: true,
-        expiresAt,
-        // Include temp data for demo purposes
-        tempUserData: process.env.NODE_ENV === 'development' ? tempUserData : undefined
+        expiresAt
       },
       timestamp: new Date().toISOString()
     });
@@ -224,7 +210,6 @@ const verifyOTP = async (req, res) => {
     }
 
     const { phone, otp, password } = value;
-    const { tempUserData } = req.body; // Temporary user data from registration
 
     // Find valid OTP
     const otpDoc = await OTP.findOne({
@@ -295,6 +280,22 @@ const verifyOTP = async (req, res) => {
       });
     }
 
+    // Registration data was captured server-side at register-phone (see P-017) -
+    // if it's missing, the OTP was requested through some other path and there's
+    // nothing safe to default to, so make the caller restart registration instead
+    // of silently creating a rider named "User".
+    const pending = otpDoc.pendingRegistration;
+    if (!pending || !pending.name || !pending.role) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'REGISTRATION_EXPIRED',
+          message: 'Registration details expired. Please request a new OTP and register again.',
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+
     // Mark OTP as used
     otpDoc.isUsed = true;
     await otpDoc.save();
@@ -304,18 +305,18 @@ const verifyOTP = async (req, res) => {
       phone,
       password,
       profile: {
-        name: tempUserData?.name || 'User'
+        name: pending.name
       },
-      role: tempUserData?.role || 'rider',
+      role: pending.role,
       isVerified: true,
       isActive: true
     };
 
     // Add driver-specific data if applicable
-    if (userData.role === 'driver' && tempUserData) {
+    if (userData.role === 'driver') {
       userData.driverInfo = {
-        licenseNumber: tempUserData.licenseNumber,
-        vehicleDetails: tempUserData.vehicleDetails,
+        licenseNumber: pending.licenseNumber,
+        vehicleDetails: pending.vehicleDetails,
         isAvailable: true,
         currentLocation: {
           type: 'Point',

@@ -92,8 +92,7 @@ describe('AuthService - Unit Tests', () => {
             const result = await authService.verifyOTP(
                 '+1234567890',
                 '123456',
-                'password123',
-                { name: 'Test User', role: 'rider' }
+                'password123'
             );
 
             expect(result.success).toBe(true);

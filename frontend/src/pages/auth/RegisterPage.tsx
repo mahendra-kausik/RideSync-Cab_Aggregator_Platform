@@ -19,7 +19,6 @@ const RegisterPage: React.FC = () => {
     vehiclePlateNumber: '',
     vehicleColor: '',
   });
-  const [tempUserData, setTempUserData] = useState<any>(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -52,8 +51,6 @@ const RegisterPage: React.FC = () => {
     try {
       const response = await register(formData);
       if (response.success) {
-        // Store temp user data for OTP verification
-        setTempUserData(response.data?.tempUserData);
         setStep('otp');
       } else {
         setError(response.error?.message || 'Registration failed');
@@ -71,9 +68,12 @@ const RegisterPage: React.FC = () => {
     setError('');
 
     try {
-      const response = await verifyOTP(formData.phone, formData.otp, formData.password, tempUserData);
+      const response = await verifyOTP(formData.phone, formData.otp, formData.password);
       if (response.success) {
-        navigate(formData.role === 'rider' ? '/rider/book' : '/driver/dashboard');
+        // Navigate off the server-confirmed role, not local form state - the
+        // account's real role now always comes back from verify-otp (P-017).
+        const role = response.data?.user?.role;
+        navigate(role === 'driver' ? '/driver/dashboard' : '/rider/book');
       } else {
         setError(response.error?.message || 'OTP verification failed');
       }

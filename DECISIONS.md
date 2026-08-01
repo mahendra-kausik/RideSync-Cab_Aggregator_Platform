@@ -1400,3 +1400,84 @@
   own Accept-Ride flow still protect against assigning a ride to someone who can't actually take it.
 - **Supersedes:** P-015's diagnosis of the pending-rides bug (P-015's request-sequencing guard is
   unaffected and stays — it protects a real, separate out-of-order race).
+
+## P-017 — Registration name/role/driverInfo round-tripped through the client and silently defaulted in production
+- **Date / Layer:** 2026-08-01 / post-ship bugfix
+- **Context:** Two reported bugs turned out to share one root cause. (1) Registering as a driver always
+  produced a rider account. (2) Every new signup displayed as "User" instead of the name entered at signup.
+- **Root cause:** Registration is two steps — `POST /auth/register-phone` (validates and echoes the
+  submitted name/role/driverInfo back to the browser as `tempUserData`) then `POST /auth/verify-otp`
+  (creates the `User` document). The user record is only created at step 2, and step 2 read
+  name/role/driverInfo from `tempUserData` replayed by the client. But `registerPhone` only included
+  `tempUserData` in its response when `process.env.NODE_ENV === 'development'`
+  (`authController.js:189`, pre-fix) — in any deployed environment it was `undefined`, so
+  `RegisterPage.tsx` stored and replayed `undefined`, and `verifyOTP` fell through to
+  `tempUserData?.name || 'User'` / `tempUserData?.role || 'rider'`. Every production signup silently
+  became a rider named "User"; a driver signup additionally lost its entire `driverInfo` sub-document
+  because the mongoose `required: role === 'driver'` guard never fired (role was already `'rider'` by
+  then). This was invisible in local dev, where `NODE_ENV` is `development` by default.
+- **Decision:** Stop round-tripping registration data through the client entirely. `OTP.js` gained a
+  `pendingRegistration` field (`Mixed`, stored alongside the OTP, cleaned up by the same 5-minute TTL
+  index — no new cleanup path needed). `registerPhone` now writes the validated name/role/driverInfo into
+  `OTP.createOTP(phone, pendingRegistration)` instead of echoing it in the response. `verifyOTP` reads
+  `otpDoc.pendingRegistration` instead of `req.body.tempUserData`, and the `|| 'User'` / `|| 'rider'`
+  fallbacks are deleted outright — if `pendingRegistration` is missing (OTP requested via some other path,
+  or corrupted), verify-otp now returns `400 REGISTRATION_EXPIRED` rather than silently defaulting.
+  `RegisterPage.tsx` also now navigates post-verify off the **server-returned** `user.role` instead of
+  local form state, matching how `LoginPage.tsx` already does it.
+- **Why:** Silent defaulting is what caused both bugs — a loud, correct error on missing registration
+  data is strictly better than guessing `rider`/`'User'`. Storing on the OTP document (rather than
+  reintroducing a client round-trip, or standing up Redis/a session store for a 5-minute-lived value) is
+  the smallest change that removes the client as the source of truth, and reuses the TTL index that was
+  already there for the OTP itself. Also closes an unrelated hole: `tempUserData` was previously read
+  from raw `req.body`, not the Joi-validated `value`, so licence/vehicle data reaching the DB was
+  client-controlled with only mongoose `maxlength` as a bound; the field is gone from `otpVerificationSchema`
+  entirely now.
+- **Alternatives considered:** Fix at the display layer (frontend `|| 'User'` fallback) — rejected,
+  there wasn't one; the literal `"User"` was being written into MongoDB, so a display-layer fix would
+  have left the DB wrong and required a second pass anyway. Storing pending registration in Redis via
+  the existing `sessionManager` — rejected as over-scoped for a value that already has a natural 5-minute
+  TTL home on the OTP document it's created alongside.
+- **Tradeoffs / risks:** `pendingRegistration` (name, licence number) sits unencrypted in the OTP
+  collection for up to 5 minutes before the TTL index reaps it — acceptable given the short lifetime and
+  that it mirrors data already in flight over the registration request itself.
+
+## P-018 — Admin dashboard pages failed simultaneously after registering a new user in the same browser; admin error banners always showed a generic message
+- **Date / Layer:** 2026-08-01 / post-ship bugfix
+- **Context:** Reported as "admin pages show nothing when new users sign up." Screenshots showed all
+  three admin pages (Dashboard, Users, Rides) failing at once with a generic "Failed to load ___" banner,
+  while the header still showed "System Administrator" and the socket read "Connected."
+- **Root cause:** `AuthContext.verifyOTP` (run for *any* successful signup) writes the newly-created
+  account's token to `localStorage['token']`. `localStorage` is shared across every tab of one browser.
+  Confirmed with the user: they registered the new test account in a second tab of the same browser
+  while the admin dashboard was open in another. That overwrote the admin's token with the new rider's
+  token. The admin tab kept rendering "System Administrator" from React state already in memory, but
+  every subsequent `/users/admin/*` request went out carrying the rider's token, and the backend
+  correctly rejected each with `403 INSUFFICIENT_PERMISSIONS`. This is not a listing-query bug — the
+  `getAllUsers` filter has no `isVerified`/status exclusion and sorts `createdAt: -1`, so a genuinely new
+  signup would already sit at the top of page 1 for a session with valid admin auth.
+  It read as a mystery only because of a second, independent bug: every admin page decoded errors as
+  `err.response?.data?.error?.message`, but `apiClient`'s response interceptor rejects with a flattened
+  `{code, message, statusCode}` object (no `.response`), so that path is always `undefined` and the
+  generic fallback string always won — a 403, a 500, and a network timeout all rendered identically.
+  Same error-shape mismatch already fixed once in `rideService` under P-016.
+- **Decision:** Fixed the error-shape mismatch (`err.message` instead of `err.response?.data?.error?.message`,
+  7 call sites across `AdminDashboardPage.tsx`, `UsersManagementPage.tsx`, `UserDetailsPage.tsx`,
+  `RidesManagementPage.tsx`). **Did not** change the underlying single-`localStorage`-key auth behavior
+  (no cross-tab sync, no change to post-signup auto-login) — discussed with the user, who confirmed this
+  is acceptable: they'll register test accounts from a second browser/incognito going forward rather than
+  a second tab of the same session.
+- **Why:** The error-message fix is a real correctness fix regardless of the localStorage question — it
+  was actively hiding the true cause of *any* future admin-page failure, not just this one. The
+  cross-tab collision itself is inherent to one-browser-one-`localStorage`-key auth (there is exactly one
+  "current session" per browser); solving it (e.g. per-tab `sessionStorage`, or a cross-tab
+  `storage`-event resync) is a real option but was explicitly deferred as not worth the change for how
+  the user actually uses the app.
+- **Alternatives considered:** A `window` `storage`-event listener re-running `checkAuthStatus()` so an
+  admin tab would immediately notice the identity swap instead of failing silently — designed and ready,
+  but dropped at the user's request as unnecessary for a "minor matter" they'll route around by using
+  incognito for test signups.
+- **Tradeoffs / risks:** Registering a new account in the same browser as an active admin (or any other)
+  session will continue to silently switch that browser's active identity. The improved error message
+  means the *symptom* is now legible ("Admin access required" instead of "Failed to load users"), but the
+  behavior itself is unchanged.

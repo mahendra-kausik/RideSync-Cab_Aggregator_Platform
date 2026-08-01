@@ -17,7 +17,7 @@ interface AuthContextType extends AuthState {
   login: (credentials: LoginCredentials) => Promise<ApiResponse>;
   logout: () => void;
   register: (credentials: LoginCredentials) => Promise<ApiResponse>;
-  verifyOTP: (phone: string, otp: string, password: string, tempUserData?: any) => Promise<ApiResponse>;
+  verifyOTP: (phone: string, otp: string, password: string) => Promise<ApiResponse>;
   updateUser: (user: User) => void;
   checkAuthStatus: () => Promise<void>;
 }
@@ -185,11 +185,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   // Verify OTP function
-  const verifyOTP = async (phone: string, otp: string, password: string, tempUserData?: any): Promise<ApiResponse> => {
+  const verifyOTP = async (phone: string, otp: string, password: string): Promise<ApiResponse> => {
     dispatch({ type: 'AUTH_START' });
 
     try {
-      const response = await authService.verifyOTP(phone, otp, password, tempUserData);
+      const response = await authService.verifyOTP(phone, otp, password);
 
       if (response.success && response.data) {
         const { user, token } = response.data;

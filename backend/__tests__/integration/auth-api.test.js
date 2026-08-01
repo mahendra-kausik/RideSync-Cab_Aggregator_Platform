@@ -34,7 +34,7 @@ describe('Authentication API (Integration)', () => {
             const phone = '5550000003';
             await request(app).post('/api/auth/register-phone').send({ phone, profile: { name: 'Bob Rider' }, role: 'rider' }).expect(200);
             const otpDoc = await OTP.findOne({ phone });
-            const res = await request(app).post('/api/auth/verify-otp').send({ phone, otp: otpDoc.otp, password: 'Rider#123', tempUserData: { name: 'Bob Rider', role: 'rider' } });
+            const res = await request(app).post('/api/auth/verify-otp').send({ phone, otp: otpDoc.otp, password: 'Rider#123' });
             expect(res.status).toBe(201);
             expect(res.body.data.user.role).toBe('rider');
             expect(res.body.data.tokens.accessToken).toBeDefined();
@@ -45,6 +45,38 @@ describe('Authentication API (Integration)', () => {
             await request(app).post('/api/auth/register-phone').send({ phone, profile: { name: 'Carol' }, role: 'rider' }).expect(200);
             const res = await request(app).post('/api/auth/verify-otp').send({ phone, otp: '000000', password: 'Secret#1' });
             expect([400, 429]).toContain(res.status);
+        });
+
+        // Regression for P-017: role/name/driverInfo must survive verify-otp even
+        // when the client never echoes registration data back (production behavior).
+        it('persists driver role and vehicle details from server-side pending registration', async () => {
+            const phone = '5550000006';
+            await request(app).post('/api/auth/register-phone').send({
+                phone,
+                profile: { name: 'Dave Driver' },
+                role: 'driver',
+                driverInfo: {
+                    licenseNumber: 'DL12345',
+                    vehicleDetails: { make: 'Toyota', model: 'Camry', plateNumber: 'ABC123', color: 'Blue' }
+                }
+            }).expect(200);
+            const otpDoc = await OTP.findOne({ phone });
+            const res = await request(app).post('/api/auth/verify-otp').send({ phone, otp: otpDoc.otp, password: 'Driver#123' });
+            expect(res.status).toBe(201);
+            expect(res.body.data.user.role).toBe('driver');
+            expect(res.body.data.user.profile.name).toBe('Dave Driver');
+            expect(res.body.data.user.driverInfo.licenseNumber).toBe('DL12345');
+            expect(res.body.data.user.driverInfo.vehicleDetails.plateNumber).toBe('ABC123');
+        });
+
+        it('rejects verify-otp when pending registration has expired/is missing', async () => {
+            const phone = '5550000007';
+            await request(app).post('/api/auth/register-phone').send({ phone, profile: { name: 'Erin' }, role: 'rider' }).expect(200);
+            const otpDoc = await OTP.findOne({ phone });
+            await OTP.updateOne({ _id: otpDoc._id }, { pendingRegistration: null });
+            const res = await request(app).post('/api/auth/verify-otp').send({ phone, otp: otpDoc.otp, password: 'Secret#123' });
+            expect(res.status).toBe(400);
+            expect(res.body.error.code).toBe('REGISTRATION_EXPIRED');
         });
     });
 

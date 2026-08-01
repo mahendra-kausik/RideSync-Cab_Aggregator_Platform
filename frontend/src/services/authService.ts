@@ -41,13 +41,12 @@ class AuthService {
   }
 
   // Verify OTP
-  async verifyOTP(phone: string, otp: string, password: string, tempUserData?: any): Promise<ApiResponse<{ user: User; token: string }>> {
+  async verifyOTP(phone: string, otp: string, password: string): Promise<ApiResponse<{ user: User; token: string }>> {
     try {
       const response = await apiClient.post('/auth/verify-otp', {
         phone,
         otp,
-        password,
-        tempUserData
+        password
       });
 
       // Transform the response to match expected format

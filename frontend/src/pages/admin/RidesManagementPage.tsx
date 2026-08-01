@@ -56,7 +56,7 @@ const RidesManagementPage: React.FC = () => {
             setPagination(response.pagination);
         } catch (err: any) {
             console.error('Failed to load rides:', err);
-            setError(err.response?.data?.error?.message || 'Failed to load rides');
+            setError(err.message || 'Failed to load rides');
         } finally {
             setLoading(false);
         }

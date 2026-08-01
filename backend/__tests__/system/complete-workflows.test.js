@@ -33,8 +33,7 @@ describe('System Workflow - Rider Journey', () => {
             .send({
                 phone,
                 otp: otpDoc.otp,
-                password: 'Workflow#Pass1',
-                tempUserData: { name: 'Workflow Rider', role: 'rider' }
+                password: 'Workflow#Pass1'
             });
         expect(verifyRes.status).toBe(201);
         const accessToken = verifyRes.body.data.tokens.accessToken;

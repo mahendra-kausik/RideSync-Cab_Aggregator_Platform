@@ -49,7 +49,7 @@ const UsersManagementPage: React.FC = () => {
             setPagination(response.pagination);
         } catch (err: any) {
             console.error('Failed to load users:', err);
-            setError(err.response?.data?.error?.message || 'Failed to load users');
+            setError(err.message || 'Failed to load users');
         } finally {
             setLoading(false);
         }
@@ -77,7 +77,7 @@ const UsersManagementPage: React.FC = () => {
             await loadUsers(); // Refresh data
         } catch (err: any) {
             console.error(`Failed to ${action} user:`, err);
-            setError(err.response?.data?.error?.message || `Failed to ${action} user`);
+            setError(err.message || `Failed to ${action} user`);
         }
     };
 

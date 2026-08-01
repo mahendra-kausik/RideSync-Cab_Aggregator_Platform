@@ -47,7 +47,7 @@ describe('Rides API (Integration)', () => {
         const otpDoc = await OTP.findOne({ phone });
         const verify = await request(app)
             .post('/api/auth/verify-otp')
-            .send({ phone, otp: otpDoc.otp, password: 'RideNow#1', tempUserData: { name: 'Ride Booker', role: 'rider' } });
+            .send({ phone, otp: otpDoc.otp, password: 'RideNow#1' });
         expect(verify.status).toBe(201);
         const token = verify.body.data.tokens.accessToken;
 

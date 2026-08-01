@@ -324,14 +324,34 @@ P-007-style "looks wired up, silently isn't" bugs:
   had no double-submit guard (same class as P-13's Accept Ride fix) so a double-click could show a stale
   409 error on a ride that had, in fact, just started. Added a small `socketService-presence.test.js` unit
   test (fake timers) covering the grace-period behavior. Backend 176/176, frontend build clean, 59/59 tests.
+- P-017 — Fixed two bugs sharing one root cause: driver signups always became riders, and every signup
+  displayed as "User". Registration name/role/driverInfo were round-tripped through the client between
+  register-phone and verify-otp, and only echoed back when `NODE_ENV === 'development'` — silently
+  `undefined` in production, so verify-otp's `|| 'User'` / `|| 'rider'` fallbacks fired on every deployed
+  signup. Moved pending registration server-side onto the OTP document (`pendingRegistration`, reaped by
+  the existing 5-minute TTL); verify-otp now returns `400 REGISTRATION_EXPIRED` instead of defaulting if
+  it's missing. `RegisterPage.tsx` now navigates post-verify off the server-returned role. Added a
+  driver-signup regression test and an expired-registration test. Backend 178/178, frontend build clean,
+  lint clean, type-check clean, 59/59 tests.
+- P-018 — Investigated "admin pages show nothing when new users sign up." Root cause: registering a new
+  account in a second tab of the same browser overwrites the admin's `localStorage` token (one shared key,
+  one active identity per browser) — every subsequent admin API call then 403s. Compounded by all four
+  admin pages reading the wrong error shape, so a 403/500/timeout all rendered the same generic banner.
+  Fixed the error-shape bug (7 call sites, `err.message` instead of `err.response?.data?.error?.message`)
+  so failures are now legible. Did **not** change the localStorage-collision behavior itself — discussed
+  with the user, who will register test accounts from incognito/a second browser going forward. Added
+  `backend/scripts/cleanup-accounts.js` (dry-run by default, `--apply` to write) to delete every account
+  except admin + the two demo accounts, plus rides referencing deleted users — **not yet run**, needs the
+  user to execute it against Atlas.
 
 ## Open items
 - ~~P-009: live re-verification~~ — **resolved**: confirmed live from two different devices; `trust proxy`
   fix works (distinct client IPs, IP+account lockout genuinely IP-scoped in production).
 - ~~Stray Atlas account (phone `4444444444`)~~ — **resolved**: deleted from Atlas by the user. Live `users`
   collection is back to admin/rider/driver only.
-
-_No open items — all build layers (0–5) shipped and gated._
+- **Run `node backend/scripts/cleanup-accounts.js --apply`** against Atlas to remove the test accounts
+  accumulated while P-017 was live (deletes everything except admin + demo rider/driver, and their rides).
+  Dry-run first (no flag) to review the list.
 
 ## How to resume
 1. Read this file, then `CLAUDE.md`. P-006 is closed — no action needed there. The post-Layer-4 hardening

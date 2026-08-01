@@ -37,7 +37,7 @@ const UserDetailsPage: React.FC = () => {
             setStats(response.stats);
         } catch (err: any) {
             console.error('Failed to load user details:', err);
-            setError(err.response?.data?.error?.message || 'Failed to load user details');
+            setError(err.message || 'Failed to load user details');
         } finally {
             setLoading(false);
         }
@@ -62,7 +62,7 @@ const UserDetailsPage: React.FC = () => {
             await loadUserDetails();
         } catch (err: any) {
             console.error(`Failed to ${action} user:`, err);
-            setError(err.response?.data?.error?.message || `Failed to ${action} user`);
+            setError(err.message || `Failed to ${action} user`);
         }
     };
 

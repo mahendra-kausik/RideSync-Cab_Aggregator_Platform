@@ -36,6 +36,12 @@ const otpSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // Registration data collected at register-phone, consumed at verify-otp.
+  // Lives only as long as the OTP (TTL below) - never echoed to the client.
+  pendingRegistration: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
   expiresAt: {
     type: Date,
     default: Date.now,
@@ -55,12 +61,13 @@ otpSchema.statics.generateOTP = function () {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-otpSchema.statics.createOTP = async function (phone) {
+otpSchema.statics.createOTP = async function (phone, pendingRegistration = null) {
   await this.updateMany({ phone: phone, isUsed: false }, { isUsed: true });
   const otp = this.generateOTP();
   const otpDoc = new this({
     phone: phone,
     otp: otp,
+    pendingRegistration,
     expiresAt: new Date(Date.now() + 5 * 60 * 1000)
   });
   await otpDoc.save();
