@@ -1244,3 +1244,46 @@
 - **Tradeoffs / risks:** The rider's pre-booking preview (still OSRM-based) can differ slightly from the
   post-booking number they then see — expected and clearly bounded to before vs. after "Book Ride".
 - **Supersedes:** none.
+
+---
+
+## P-013 — P-012's distance fix was backwards; "already accepted" error was a double-submit race
+- **Date / Layer:** 2026-08-01 / post-ship UX fix (found while live-verifying P-012)
+- **Context:** After P-012, live testing showed: the driver's *active* ride card (post-accept) displayed
+  6.1 km while the rider's overlay now showed 3.7 km — flipped from the original bug report, and the rider's
+  number stayed wrong through ride completion. Separately, accepting a ride actually succeeded (the driver's
+  dashboard correctly showed status `ACCEPTED`) but the UI simultaneously surfaced
+  "This ride has already been accepted by another driver or you are no longer available."
+- **Root causes:**
+  1. **P-012's distance decision was wrong.** `ActiveRideSection.tsx` (driver, post-accept) doesn't read
+     `ride.estimatedDistance` at all when it has a live route — it prefers `distanceKm`, which
+     `DriverDashboardPage.tsx`'s own `fetchRoute` effect fetches from OSRM for every `activeRide`. So once
+     accepted, the driver already shows the **OSRM road-route** number, not the Haversine one P-012 assumed.
+     Forcing the rider to show `currentRide.estimatedDistance` (Haversine) instead of its existing
+     `routeMetrics` (also OSRM, fetched during fare estimation, for the *same* pickup/destination coords)
+     broke an agreement that already existed — OSRM is deterministic for a given coordinate pair, so the
+     rider's pre-booking OSRM fetch and the driver's post-accept OSRM fetch were already the same number.
+  2. **Double-submit race on Accept Ride.** The button in `PendingRidesSection.tsx` had no disabled/in-flight
+     state, so two rapid clicks (or a slow first response) could fire `handleAcceptRide` twice for the same
+     ride before the first request resolved and cleared the pending list. The first request succeeds; the
+     second reaches the backend after the ride is already `accepted` and gets a legitimate 409
+     `ASSIGNMENT_CONFLICT` from `MatchingService.assignRideToDriver`'s Step 1 (`status: 'requested'` no
+     longer matches) — and since promise resolution order isn't guaranteed, the second call's error can
+     land and overwrite `error` state *after* the first call's success already set `activeRide`.
+- **Decision:** (1) Reverted `RiderBookPage.tsx`'s overlay back to `routeMetrics?.distanceKm ?? fareEstimate.distance`
+  (undoing P-012 item 1) — this was already correct and already agreed with the driver's post-accept number.
+  (2) Added an `acceptingRideId` in-flight guard in `DriverDashboardPage.handleAcceptRide` (ignore a call
+  while one's already running, cleared in `finally`) and disabled/relabeled the Accept button in
+  `PendingRidesSection.tsx` while a request for any ride is in flight.
+- **Why:** (1) is a straight revert once the actual driver-side data flow was understood — P-012 diagnosed
+  the right symptom but the wrong cause for the distance mismatch. (2) is the standard fix for a double-submit
+  race: make the trigger (the clickable button / re-entrant handler) impossible while a request is already
+  outstanding, rather than trying to reconcile out-of-order responses after the fact.
+- **Alternatives considered:** Deduping by request idempotency key server-side — rejected, no evidence the
+  backend was double-invoked (the ride only shows one accept in its timeline); the race is client-side
+  (two requests sent), so a client-side guard is the correct layer to fix it at.
+- **Tradeoffs / risks:** None — this only removes a way to fire a request twice; single-click behavior is
+  unchanged. PendingRidesSection's pre-accept Haversine estimate (`ride.estimatedDistance`, unrelated to this
+  fix) is still a different, smaller number than the post-accept OSRM one — an intentional, pre-existing
+  "preview vs. final" gap, not touched here.
+- **Supersedes:** P-012's distance-mismatch decision (item 1 only; items 2 and 3 of P-012 stand).

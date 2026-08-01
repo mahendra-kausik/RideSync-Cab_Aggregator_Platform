@@ -32,6 +32,7 @@ const DriverDashboardPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [route, setRoute] = useState<[number, number][] | null>(null);
   const [routeMetrics, setRouteMetrics] = useState<{ distanceKm: number; durationMin: number } | null>(null);
+  const [acceptingRideId, setAcceptingRideId] = useState<string | null>(null);
 
   // Load initial data
   useEffect(() => {
@@ -225,7 +226,14 @@ const DriverDashboardPage: React.FC = () => {
   };
 
   const handleAcceptRide = async (rideId: string) => {
+    // Guard against a double-click firing this twice before the first request
+    // resolves and clears the pending list - the second call would always 409
+    // even though the first one already succeeded.
+    if (acceptingRideId) {
+      return;
+    }
     try {
+      setAcceptingRideId(rideId);
       setError(null);
       const acceptedRide = await rideService.acceptRide(rideId);
       setActiveRide(acceptedRide);
@@ -240,6 +248,8 @@ const DriverDashboardPage: React.FC = () => {
       setError(err.message);
       // Refresh pending rides list in case of conflict
       await loadPendingRides();
+    } finally {
+      setAcceptingRideId(null);
     }
   };
 
@@ -346,6 +356,7 @@ const DriverDashboardPage: React.FC = () => {
               onAcceptRide={handleAcceptRide}
               isAvailable={isAvailable}
               onRefresh={loadPendingRides}
+              acceptingRideId={acceptingRideId}
             />
           )}
 

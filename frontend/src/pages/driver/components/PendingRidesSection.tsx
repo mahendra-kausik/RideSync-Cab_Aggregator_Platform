@@ -6,13 +6,15 @@ interface PendingRidesSectionProps {
   onAcceptRide: (rideId: string) => void;
   isAvailable: boolean;
   onRefresh: () => void;
+  acceptingRideId: string | null;
 }
 
 const PendingRidesSection: React.FC<PendingRidesSectionProps> = ({
   rides,
   onAcceptRide,
   isAvailable,
-  onRefresh
+  onRefresh,
+  acceptingRideId
 }) => {
   // Ensure rides is always an array
   const safeRides = Array.isArray(rides) ? rides : [];
@@ -119,8 +121,9 @@ const PendingRidesSection: React.FC<PendingRidesSectionProps> = ({
                 <button
                   className="btn btn-primary btn-accept"
                   onClick={() => onAcceptRide(ride._id)}
+                  disabled={!!acceptingRideId}
                 >
-                  Accept Ride
+                  {acceptingRideId === ride._id ? 'Accepting...' : 'Accept Ride'}
                 </button>
               </div>
             </div>

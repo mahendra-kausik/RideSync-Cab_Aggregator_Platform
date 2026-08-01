@@ -673,13 +673,13 @@ const RiderBookPage: React.FC = () => {
             showRoute={!!pickup && !!destination}
           />
 
-          {/* Route information overlay. Once a ride is booked, show the ride's own
-              estimatedDistance/Duration (same number the driver sees and the fare was
-              based on) instead of the live OSRM preview route, so both sides agree. */}
+          {/* Route information overlay - the OSRM road-route distance, same source
+              the driver's ActiveRideSection uses once a ride is accepted (both fetch
+              OSRM for the same pickup/destination coords, so the numbers agree). */}
           {fareEstimate && pickup && destination && (
             <div className={`route-info ${driverLocation ? 'with-driver' : ''}`}>
-              <div>Distance: {(currentRide ? currentRide.estimatedDistance : (routeMetrics?.distanceKm ?? fareEstimate.distance)).toFixed(1)} km</div>
-              <div>Est. Time: {Math.round(currentRide ? currentRide.estimatedDuration : (routeMetrics?.durationMin ?? fareEstimate.duration))} min</div>
+              <div>Distance: {(routeMetrics?.distanceKm ?? fareEstimate.distance).toFixed(1)} km</div>
+              <div>Est. Time: {Math.round(routeMetrics?.durationMin ?? fareEstimate.duration)} min</div>
               {driverLocation && <div>🚗 Driver tracking active</div>}
             </div>
           )}

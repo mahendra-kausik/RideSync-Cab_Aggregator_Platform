@@ -286,6 +286,18 @@ P-007-style "looks wired up, silently isn't" bugs:
   error-unwrapping code in `rideService.ts.acceptRide` (checked `error.response?.data?.error`, but
   `apiClient.ts`'s interceptor already flattens errors to `{code, message}` — friendlier
   `ASSIGNMENT_CONFLICT` message was never reachable). Backend 173/173, frontend 59/59, build clean.
+- P-013 — **Corrects P-012's distance fix**, which was backwards: the driver's *active* ride card doesn't
+  use `ride.estimatedDistance` at all once accepted — `ActiveRideSection` prefers the live OSRM route
+  `DriverDashboardPage` already fetches per active ride. That OSRM number is the same one the rider's
+  `routeMetrics` already held from fare estimation (same coords, deterministic OSRM route) — P-012 broke
+  that pre-existing agreement by forcing the rider onto the Haversine value instead. Reverted
+  `RiderBookPage.tsx` back to `routeMetrics?.distanceKm ?? fareEstimate.distance`. Separately, fixed a
+  double-submit race on Accept Ride: the button had no in-flight guard, so a fast double-click (or a slow
+  first response) could fire two accept requests for the same ride — the first succeeds, the second
+  legitimately 409s, and the error could land after the success and show a misleading "already accepted"
+  banner on a ride that was, in fact, just accepted. Added an `acceptingRideId` guard in
+  `DriverDashboardPage.handleAcceptRide` and disabled/relabeled the button in `PendingRidesSection` while a
+  request is in flight. Frontend build clean, 59/59 tests pass (backend untouched this round).
 
 ## Open items
 - ~~P-009: live re-verification~~ — **resolved**: confirmed live from two different devices; `trust proxy`
