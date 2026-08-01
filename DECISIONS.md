@@ -1201,3 +1201,46 @@
   duration. Backend already returns rider/driver PII (name+phone) on every populated ride fetch — no new
   encryption/decryption path was added, this only changes what the frontend renders.
 - **Supersedes:** none (the toggle had no prior D-entry).
+
+---
+
+## P-012 — Rider and driver saw two different distances for the same ride; driver's Accept always 409'd
+- **Date / Layer:** 2026-08-01 / post-ship UX fix (found while verifying D-017)
+- **Context:** User-reported: rider's map showed "6.1 km / 7 min" while the driver's pending-ride card for
+  the *same ride* showed "3.7 km / 8 min" — and clicking Accept Ride failed with "Driver no longer
+  available" even though the driver's own toggle showed Available.
+- **Root causes (two independent bugs):**
+  1. **Distance mismatch:** `rideController.js`'s `calculateDistance` (used for `Ride.estimatedDistance`,
+     what the driver's card and the fare are based on) is a **Haversine straight-line** calculation.
+     `RiderBookPage.tsx`'s map overlay instead showed `routeMetrics`, a **live OSRM road-route** fetched
+     client-side during fare estimation — a genuinely different, larger number for the same trip, and that
+     state was never cleared or reconciled after the ride was actually booked, so the rider kept seeing the
+     road-route number forever while the driver and the fare used the straight-line one.
+  2. **Stuck `driverInfo.isAvailable`:** `getPendingRides` (`rideController.js`) lists rides filtered only
+     by proximity/status — it never checked whether the requesting driver's own `isAvailable` flag was
+     `true`. `demoDriver1`'s flag was `false` in Atlas (almost certainly left over from an earlier
+     debugging session's ride that was accepted but never cleanly completed/cancelled — `releaseDriver`,
+     the only thing that flips it back to `true`, only runs on a successful complete/cancel transition).
+     So the pending-ride card kept showing with an Accept button that could only ever 409
+     (`MatchingService.assignRideToDriver`'s Step 2 requires `driverInfo.isAvailable: true`).
+  3. **Side finding (not the reported symptom, fixed while in the file):** the friendlier
+     `ASSIGNMENT_CONFLICT` message in `rideService.ts`'s `acceptRide` catch was dead code — it checked
+     `error.response?.data?.error`, but `apiClient.ts`'s response interceptor already unwraps axios errors
+     into a flat `{code, message}` object before any caller sees them, so that branch never matched and the
+     raw backend string always leaked through instead.
+- **Decision:** (1) `RiderBookPage.tsx`'s route overlay now shows `currentRide.estimatedDistance` /
+  `estimatedDuration` once a ride exists, falling back to the OSRM preview only pre-booking (when there's
+  no ride yet to be authoritative). (2) `getPendingRides` now returns an empty list when the requesting
+  driver's own `isAvailable` is `false`, instead of listing rides they can't accept. (3) `rideService.ts`
+  checks `error.code` directly to match the interceptor's actual error shape.
+- **Why:** (1) makes the two roles agree on the number that was actually used for the fare, matching the
+  pattern already established for the driver side in the prior commit (using `ride.estimatedDistance`
+  instead of re-deriving). (2) is the correct place to guard — a driver who can't accept shouldn't be shown
+  an always-failing Accept button; it doesn't fix *why* a flag gets stuck, but that's demo-account data
+  hygiene (needs an availability toggle off/on, or a DB fix), not a code bug to chase further right now.
+- **Alternatives considered:** Switching the backend to real OSRM road distance for fare/matching too —
+  rejected as much larger scope (new network dependency at ride-creation time, changes fare amounts) for a
+  cosmetic mismatch; Haversine is fine as the canonical number as long as everyone shows the same one.
+- **Tradeoffs / risks:** The rider's pre-booking preview (still OSRM-based) can differ slightly from the
+  post-booking number they then see — expected and clearly bounded to before vs. after "Book Ride".
+- **Supersedes:** none.

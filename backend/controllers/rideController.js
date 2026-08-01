@@ -413,6 +413,16 @@ class RideController {
     try {
       const { lat, lng, radius = 10 } = req.query;
 
+      // A driver whose own availability flag is off can never actually accept
+      // (assignRideToDriver requires it) - don't show rides they can't take.
+      if (!req.user.driverInfo?.isAvailable) {
+        return res.json({
+          success: true,
+          data: { rides: [], count: 0, radius },
+          timestamp: new Date().toISOString()
+        });
+      }
+
       // Validate driver location if provided
       if (lat && lng) {
         const coordinates = [parseFloat(lng), parseFloat(lat)];

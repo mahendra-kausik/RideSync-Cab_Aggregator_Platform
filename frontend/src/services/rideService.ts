@@ -255,15 +255,10 @@ class RideService {
     } catch (error: any) {
       console.error('Accept ride error:', error);
 
-      // Handle specific error codes
-      if (error.response?.data?.error) {
-        const apiError = error.response.data.error;
-
-        if (apiError.code === 'ASSIGNMENT_CONFLICT') {
-          throw new Error('This ride has already been accepted by another driver or you are no longer available. Please refresh to see updated rides.');
-        }
-
-        throw new Error(apiError.message || 'Failed to accept ride');
+      // apiClient's response interceptor already unwraps axios errors into a
+      // flat { code, message } shape, so check that directly (not error.response).
+      if (error.code === 'ASSIGNMENT_CONFLICT') {
+        throw new Error('This ride has already been accepted by another driver or you are no longer available. Please refresh to see updated rides.');
       }
 
       throw new Error(error.message || 'Failed to accept ride');

@@ -276,6 +276,16 @@ P-007-style "looks wired up, silently isn't" bugs:
   display; backend already populated this data). Removed the unenforced, buggy "share location" toggle —
   location now flows to the rider for the whole active-ride lifetime, no opt-out. Header username visible
   on mobile again (was hidden below 768px). Frontend build clean, 59/59 frontend tests pass.
+- P-012 — Fixed a rider/driver distance mismatch (rider showed live OSRM road distance, driver showed the
+  Haversine distance the fare was actually based on — now both show the ride's canonical
+  `estimatedDistance`/`estimatedDuration` once booked) and a driver-side "Driver no longer available" 409
+  on Accept: `getPendingRides` now hides rides from a driver whose own `isAvailable` is `false` instead of
+  showing an always-failing Accept button. **`demoDriver1`'s `isAvailable` was still stuck `false` in
+  Atlas at last check** (leftover from an earlier session's incomplete ride) — toggle its availability off
+  then on in the driver dashboard to force it back to `true` before demoing Accept Ride. Also fixed dead
+  error-unwrapping code in `rideService.ts.acceptRide` (checked `error.response?.data?.error`, but
+  `apiClient.ts`'s interceptor already flattens errors to `{code, message}` — friendlier
+  `ASSIGNMENT_CONFLICT` message was never reachable). Backend 173/173, frontend 59/59, build clean.
 
 ## Open items
 - ~~P-009: live re-verification~~ — **resolved**: confirmed live from two different devices; `trust proxy`
