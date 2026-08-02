@@ -248,7 +248,16 @@ const RiderMyRides: React.FC = () => {
                                         </button>
                                     )}
 
-                                    {ride.status === 'completed' && !ride.rating?.driverRating && (
+                                    {ride.status === 'completed' && ride.payment?.status !== 'completed' && (
+                                        <button
+                                            className="btn-primary btn-sm"
+                                            onClick={() => navigate(`/rider/completion/${ride._id}`)}
+                                        >
+                                            Pay for the ride
+                                        </button>
+                                    )}
+
+                                    {ride.status === 'completed' && ride.payment?.status === 'completed' && !ride.rating?.driverRating && (
                                         <button
                                             className="btn-primary btn-sm"
                                             onClick={() => navigate(`/rider/completion/${ride._id}`)}

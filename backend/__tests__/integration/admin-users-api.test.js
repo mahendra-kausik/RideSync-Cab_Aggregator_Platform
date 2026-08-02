@@ -70,3 +70,44 @@ describe('Admin Users API - search (Integration)', () => {
         expect(res.body.pagination.total).toBe(0);
     });
 });
+
+// Regression: GET /users/admin/stats used to sum every role bucket into
+// users.total/activeUsers, including the admin who is always excluded from
+// getAllUsers - so the dashboard's "Total Users" count never matched the list.
+describe('Admin Users API - platform stats (Integration)', () => {
+    let app;
+    let adminToken;
+
+    beforeAll(() => {
+        app = createTestApp();
+    });
+
+    beforeEach(async () => {
+        const adminEmail = 'admin-stats-test@test.local';
+        await global.testUtils.createTestUser({
+            email: adminEmail,
+            password: 'AdminPass#1',
+            role: 'admin',
+            profile: { name: 'Stats Test Admin' }
+        });
+        const login = await request(app).post('/api/auth/login-email')
+            .send({ email: adminEmail, password: 'AdminPass#1' });
+        expect(login.status).toBe(200);
+        adminToken = login.body.data.tokens.accessToken;
+    });
+
+    it('excludes admins from users.total and users.activeUsers, but still reports users.admins', async () => {
+        await global.testUtils.createTestUser({ phone: '5550004001', role: 'rider', profile: { name: 'Stats Rider' } });
+        await global.testUtils.createTestDriver({ phone: '5550004002', profile: { name: 'Stats Driver' } });
+
+        const res = await request(app)
+            .get('/api/users/admin/stats')
+            .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(res.status).toBe(200);
+        // One rider + one driver - the admin used to obtain the token is excluded
+        expect(res.body.data.users.total).toBe(2);
+        expect(res.body.data.users.activeUsers).toBe(2);
+        expect(res.body.data.users.admins).toBe(1);
+    });
+});

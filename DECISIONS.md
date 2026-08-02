@@ -1547,3 +1547,52 @@
 - **Tradeoffs / risks:** `getAllUsers`'s search path now does an unbounded `User.find()` when a `search`
   term is present, instead of DB-level pagination — acceptable at current scale (dozens of users at
   most), would need revisiting if the user base grows substantially.
+
+## P-020 — Removed mock-card checkout, riders weren't redirected to pay after ride completion, admin "Total Users" over-counted by one
+- **Date / Layer:** 2026-08-02 / post-ship bugfix
+- **Context:** Three issues requested in one pass: (1) drop mock card payments and keep cash-only;
+  (2) after a ride completes, take the rider straight to a page titled "Pay for the ride" instead of
+  leaving them to stumble on a "Rate Driver" button; (3) the admin dashboard's "Total Users" stat counted
+  one more than the users table ever showed, because it silently included the admin account.
+- **Root cause (2):** `RiderBookPage`'s `ride:status-change`/`ride:status-updated` socket handlers only
+  called `setSuccessMessage()` on `completed` — there was no `navigate()` call anywhere in the file
+  (confirmed: zero matches for `useNavigate`/`navigate(` before this fix). The only path to payment was
+  noticing a "Rate Ride" button in My Rides, which was also mislabeled — it opened the payment step
+  whenever `payment.status !== 'completed'`, not the rating step.
+- **Root cause (3):** `getAllUsers` filters `{ role: { $ne: 'admin' } }` so admins never appear in the
+  list, but `getPlatformStats`'s `$group`-by-role aggregate had no matching exclusion — `users.total` and
+  `users.activeUsers` summed every role bucket, admin included. The two endpoints encoded opposite
+  definitions of "user."
+- **Decision:**
+  1. Deleted the mock-card path entirely from `PaymentForm.tsx`/`paymentService.ts` (card state, card
+     form, "Test Payment Scenarios" picker, `validatePaymentDetails`, `getMockPaymentScenarios`) — cash is
+     now the only method, no method picker shown. Left the backend `mock` enum values in
+     `middleware/validation.js` and `models/Ride.js` untouched, and `paymentController.processMockPayment`
+     unreachable-but-present, so historical rides recorded with `method: 'mock'` still render correctly in
+     Receipt/Payment History/admin ride details.
+  2. Added `navigate(`/rider/completion/${rideId}`)` to both `completed` socket handlers in
+     `RiderBookPage.tsx` (import + hook were missing, added). `RideCompletion.tsx` already implements a
+     `payment → rating → receipt` state machine driven by `ride.payment.status`, so no restructuring was
+     needed there — only the heading ("Pay for the ride") and the My Rides button label, which now reads
+     "Pay for the ride" vs "Rate Ride" depending on `payment.status`, matching what each button actually
+     opens.
+  3. Fixed `getPlatformStats`'s rollup (not the aggregation) to exclude the `admin` bucket from the
+     `total`/`activeUsers` reduces, while leaving `users.admins` reading off the full, unfiltered bucket
+     list.
+- **Why:** For (1), the removed UI was also actively broken — `cardDetails` hardcoded `expiryYear: 2025`,
+  which both the client validator and the backend Joi schema reject as a past year, so a rider who never
+  touched the year dropdown failed validation on load; deleting the scaffolding deletes the bug with it.
+  For (3), filtering at the rollup rather than adding `$match: { role: { $ne: 'admin' } }` to the aggregate
+  keeps `users.admins` non-zero — that field is part of the existing `PlatformStats` API contract
+  (`frontend/src/services/adminService.ts`) and a `$match` would have silently broken it as a side effect.
+- **Alternatives considered:** Narrowing the backend `paymentMethod` enum to `cash`-only was considered and
+  explicitly rejected (user's call) to avoid touching data-model compatibility for historical rides for a
+  UI-only ask. Adding a `$match` stage to the stats aggregate was considered and rejected for the reason
+  above.
+- **Tradeoffs / risks:** The backend still accepts `paymentMethod: 'mock'` on `POST /payments/process` —
+  the API surface is wider than the UI now exposes, which is intentional (back-compat) but means a
+  determined client could still hit the mock-card code path directly. Added one integration test
+  (`admin-users-api.test.js`) asserting `users.total`/`activeUsers`/`admins` against a seeded rider+driver+
+  admin, since `/users/admin/stats` had zero prior coverage; the pre-existing search-only tests in that
+  file (`pagination.total` of 1 and 0) were left untouched, as they pass precisely because `getAllUsers`
+  already excludes admins.

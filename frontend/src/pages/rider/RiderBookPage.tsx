@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import MapComponent from '../../components/common/MapComponent';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { rideService, FareEstimate } from '../../services/rideService';
@@ -15,6 +16,7 @@ interface LocationData {
 
 const RiderBookPage: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { isConnected, joinRideRoom, leaveRideRoom } = useSocket();
   // Disable automatic geolocation - use manual button instead
   const geolocation: { loading: boolean; error: any; latitude: number | null; longitude: number | null } = {
@@ -227,8 +229,9 @@ const RiderBookPage: React.FC = () => {
           setError(null);
           break;
         case 'completed':
-          setSuccessMessage('Ride completed! Thank you for using our service.');
           leaveRideRoom(currentRide._id);
+          localStorage.removeItem('currentRideId');
+          navigate(`/rider/completion/${currentRide._id}`);
           break;
         case 'cancelled':
           setError('Your ride has been cancelled.');
@@ -258,10 +261,10 @@ const RiderBookPage: React.FC = () => {
           setError(null);
           break;
         case 'completed':
-          setSuccessMessage('Ride completed! Thank you for using our service.');
           if (currentRide) {
             leaveRideRoom(currentRide._id);
             localStorage.removeItem('currentRideId');
+            navigate(`/rider/completion/${currentRide._id}`);
           }
           break;
         case 'cancelled':

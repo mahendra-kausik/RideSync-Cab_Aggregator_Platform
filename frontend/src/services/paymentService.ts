@@ -3,13 +3,7 @@ import { ApiResponse, Ride } from '../types';
 
 export interface PaymentRequest {
   rideId: string;
-  paymentMethod: 'mock' | 'cash';
-  paymentDetails?: {
-    cardNumber?: string;
-    cvv?: string;
-    expiryMonth?: number;
-    expiryYear?: number;
-  };
+  paymentMethod: 'cash';
 }
 
 export interface RatingRequest {
@@ -146,42 +140,6 @@ class PaymentService {
   }
 
   /**
-   * Validate payment method details
-   */
-  validatePaymentDetails(method: string, details?: any): { isValid: boolean; errors: string[] } {
-    const errors: string[] = [];
-
-    switch (method) {
-      case 'mock':
-        if (details?.cardNumber && !/^\d{16}$/.test(details.cardNumber.replace(/\s/g, ''))) {
-          errors.push('Card number must be 16 digits');
-        }
-        if (details?.cvv && !/^\d{3,4}$/.test(details.cvv)) {
-          errors.push('CVV must be 3 or 4 digits');
-        }
-        if (details?.expiryMonth && (details.expiryMonth < 1 || details.expiryMonth > 12)) {
-          errors.push('Expiry month must be between 1 and 12');
-        }
-        if (details?.expiryYear && details.expiryYear < new Date().getFullYear()) {
-          errors.push('Expiry year cannot be in the past');
-        }
-        break;
-
-      case 'cash':
-        // No validation needed for cash payments
-        break;
-
-      default:
-        errors.push('Invalid payment method');
-    }
-
-    return {
-      isValid: errors.length === 0,
-      errors
-    };
-  }
-
-  /**
    * Format currency amount
    */
   formatCurrency(amount: number, currency = 'INR'): string {
@@ -251,29 +209,6 @@ class PaymentService {
     );
 
     return lines.join('\n');
-  }
-
-  /**
-   * Get mock payment test scenarios
-   */
-  getMockPaymentScenarios(): Array<{ cardNumber: string; description: string; expectedResult: string }> {
-    return [
-      {
-        cardNumber: '4242424242424242',
-        description: 'Successful payment',
-        expectedResult: 'Payment will be processed successfully'
-      },
-      {
-        cardNumber: '4000000000000002',
-        description: 'Card declined',
-        expectedResult: 'Payment will be declined'
-      },
-      {
-        cardNumber: '4000000000009995',
-        description: 'Insufficient funds',
-        expectedResult: 'Payment will fail due to insufficient funds'
-      }
-    ];
   }
 }
 

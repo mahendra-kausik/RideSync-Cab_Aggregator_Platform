@@ -941,13 +941,15 @@ class UserController {
       });
 
       // Format response
+      // Exclude admins from total/activeUsers so this matches getAllUsers, which never lists them
+      const nonAdminStats = userStats.filter(stat => stat._id !== 'admin');
       const stats = {
         users: {
-          total: userStats.reduce((sum, stat) => sum + stat.count, 0),
+          total: nonAdminStats.reduce((sum, stat) => sum + stat.count, 0),
           riders: userStats.find(s => s._id === 'rider')?.count || 0,
           drivers: userStats.find(s => s._id === 'driver')?.count || 0,
           admins: userStats.find(s => s._id === 'admin')?.count || 0,
-          activeUsers: userStats.reduce((sum, stat) => sum + stat.active, 0),
+          activeUsers: nonAdminStats.reduce((sum, stat) => sum + stat.active, 0),
           activeDrivers
         },
         rides: {

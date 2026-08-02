@@ -357,6 +357,18 @@ P-007-style "looks wired up, silently isn't" bugs:
   `__tests__/helpers/testApp.js`, which wasn't wired into the test app at all. Backend 182/182, frontend
   unaffected (re-ran lint/build as a safety net, unchanged). Full root-cause writeup and the
   stale-`email_hash`-on-unset bug discovered (and left out of scope) in DECISIONS.md P-019.
+- P-020 — Three requested fixes. (1) Removed mock-card checkout from `PaymentForm.tsx`/`paymentService.ts`
+  — cash-only now, no method picker; this also deleted a live bug (`cardDetails` hardcoded a past
+  `expiryYear`, which both the client and backend validators rejected). Backend `mock` enum left in place
+  so historical rides still render. (2) Riders were never redirected to payment on ride completion — the
+  only path was a mislabeled "Rate Ride" button. Added `navigate()` to `RiderBookPage`'s `completed` socket
+  handlers (`useNavigate` wasn't even imported there); `RideCompletion.tsx`'s existing
+  payment→rating→receipt state machine needed no changes, just a heading ("Pay for the ride") and a
+  My Rides button label that now tracks `payment.status`. (3) Admin "Total Users" over-counted by exactly
+  one: `getAllUsers` excludes admins, `getPlatformStats`'s rollup didn't. Fixed at the rollup (not the
+  aggregate) so `users.admins` stays reported. Added 1 new integration test for the previously-uncovered
+  `/users/admin/stats` endpoint. Backend 183/183, frontend lint 0 errors/12 warnings (baseline), type-check
+  clean, build clean, 59/59 frontend tests. Full writeup in DECISIONS.md P-020.
 
 ## Open items
 - ~~P-009: live re-verification~~ — **resolved**: confirmed live from two different devices; `trust proxy`
