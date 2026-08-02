@@ -132,11 +132,11 @@ to in-memory.
 
 ## Testing
 
-- **Backend:** 173/173 tests passing (Jest + Supertest, 11 suites — unit / integration / system).
+- **Backend:** 184/184 tests passing (Jest + Supertest, 14 suites — unit / integration / system).
 - **Frontend:** 59/59 tests passing (Vitest).
 
 ```bash
-cd backend  && npm test        # 173 tests
+cd backend  && npm test        # 184 tests
 cd frontend && npm test        # 59 tests
 ```
 
@@ -174,6 +174,8 @@ This is a portfolio project deployed on free tiers; these are the known limits, 
   load test reports what it actually saw rather than asserting a guaranteed catch.
 - **Encryption key has no rotation.** A single `ENCRYPTION_KEY` encrypts all PII; there's no
   key-rotation or envelope-encryption scheme.
-- **Payments are mock/cash only** — no live gateway, and no payment-webhook signature verification.
+- **Payments are cash-only in the UI** (mock-card checkout was removed — P-020); the backend still
+  accepts a legacy `mock` payment method for historical-ride compatibility, not reachable from the app.
+  No live gateway, and no payment-webhook signature verification.
 - **Security audit logs write to local disk**, which Render wipes on cold start, so they're not
   durable in the live deploy.

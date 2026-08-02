@@ -2,7 +2,7 @@
 
 > **How to use this file:** paste this whole document into Claude along with a specific job
 > description. Ask it to generate tailored resume bullets. Everything here is factual and
-> verified as of 2026-07-24; every number traces to a test run, the `load/` results, or a
+> verified as of 2026-08-02; every number traces to a test run, the `load/` results, or a
 > `DECISIONS.md` entry. Do not let the model invent metrics not present here.
 
 ---
@@ -153,7 +153,7 @@ Run config recorded in `load/README.md` (commit `20c6d38`, Node v24.4.1, k6, i5-
 | Circuit-breaker trip | `maps` breaker **CLOSED → OPEN** captured (3 failures = threshold, <1 s) |
 | Horizontal-scaling proof | ride update emitted on **instance A delivered to a client on instance B**; session survived an instance restart (2 local instances, 1 Upstash Redis) |
 
-**Tests (re-verified 2026-07-24):** backend **173/173** passing (11 suites: unit/integration/system,
+**Tests (re-verified 2026-08-02):** backend **184/184** passing (14 suites: unit/integration/system,
 Jest+Supertest); frontend **59/59** passing (Vitest). CI runs both on every push/PR.
 
 ---
@@ -194,9 +194,11 @@ Jest+Supertest); frontend **59/59** passing (Vitest). CI runs both on every push
 - Circuit-breaker state is **per-instance, in-memory** (no shared breaker across a fleet).
 - `OPEN → HALF_OPEN` is a single-request transient — not reliably observable externally.
 - Encryption key has **no rotation** (single `ENCRYPTION_KEY`, no envelope scheme).
-- Payments are **mock/cash only** — no live gateway, no payment-webhook signature verification.
+- Payments are **cash-only in the UI** (mock-card checkout was removed — P-020); the backend still
+  accepts a legacy `mock` payment method for historical-ride compatibility, not reachable from the app.
+  No live gateway, no payment-webhook signature verification.
 - Security audit logs write to local disk, wiped on Render cold start (not durable live).
-- Backend statement coverage is ~32% for the curated 173-test suite (concentrated on core logic:
+- Backend statement coverage is ~32% for the curated 184-test suite (concentrated on core logic:
   auth, fare, matching, lockout; infra/logging files untested). Lead with test *counts*, not coverage.
 
 ---
@@ -218,4 +220,4 @@ Jest+Supertest); frontend **59/59** passing (Vitest). CI runs both on every push
 - Hardened auth: **AES-256-GCM PII encryption** (verified encrypted-at-rest), Redis-backed IP+account
   **login lockout**, JWT rotation, per-route rate limiting, Joi validation, Helmet headers.
 - Diagnosed and fixed a **silent-encryption bug** and a **production TLS/Redis incident**, plus 8+ real
-  concurrency/auth bugs found in a systematic audit; **173 backend + 59 frontend tests** passing in CI.
+  concurrency/auth bugs found in a systematic audit; **184 backend + 59 frontend tests** passing in CI.

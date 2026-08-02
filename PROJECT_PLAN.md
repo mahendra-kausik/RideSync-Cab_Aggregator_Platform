@@ -11,7 +11,9 @@
 RideSync is a working MERN ride-hailing platform — riders book, a geospatial matcher assigns the nearest
 available driver, both sides get live updates over WebSocket, fares are computed dynamically, and PII is
 encrypted at rest. It already has real engineering: a circuit-breaker/graceful-degradation layer, JWT/OTP
-auth, field-level AES-256-GCM encryption, and 578 automated tests at ~72% coverage.
+auth, field-level AES-256-GCM encryption, and a curated automated test suite (current count in
+`PROGRESS.md`/`README.md`). An earlier claim of "578 tests / 72% coverage" was inherited from a prior
+project state and did not hold up under re-verification — see D-016.
 
 **But it has never left localhost.** It runs only via Docker Compose, so three things that separate a
 production service from a student project are missing or unproven:
@@ -143,7 +145,8 @@ Order is leverage-first: get it deployed and demoable, then add the depth that p
   Redis, not as two live Render instances. This is still a fully valid proof that the architecture is
   horizontally scalable; be precise about the local-vs-live distinction in the README and in interviews.
 - **Gate:** two **local** backend instances against one Redis — a ride update emitted via instance A reaches
-  a client on instance B; sessions survive a single-instance restart; all 578 backend tests still pass.
+  a client on instance B; sessions survive a single-instance restart; the full backend test suite still
+  passes (see D-016 for why this gate no longer cites a specific stale count).
 
 ### Layer 3 — Load testing with k6 (real metrics)
 - `load/` scenarios against the **deployed** stack: REST ramp (req/s + p95), concurrent WS hold, and a

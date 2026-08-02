@@ -5,6 +5,13 @@
 > lives in `DECISIONS.md`; headline numbers + architecture live in `README.md`.
 
 ## Current status
+**As of 2026-08-02: all 6 layers shipped (Layer 5 — README-as-paper — is done, see the Layer checklist
+below), all P-006 → P-022 post-ship fixes shipped and verified, all Open items resolved. Backend
+184/184 tests, frontend 59/59, CI green. No active work — awaiting next task.** The narrative below is
+kept as the historical build log; each entry's numbers are accurate as of when it was written, not
+necessarily current — see `PROGRESS.md`'s per-P-XXX entries further down for the latest state of any
+given area, or `README.md` for the always-current headline numbers.
+
 **✅ P-006 — RESOLVED and verified live** (see DECISIONS.md's seven P-006 entries for the full incident).
 Root cause of the live failures: Render's `REDIS_URL` env var used `redis://` (plaintext) instead of
 `rediss://` (TLS) — a one-scheme env var difference, not an application bug. Found by diffing the working
@@ -153,7 +160,9 @@ P-007-style "looks wired up, silently isn't" bugs:
   inputs, and test fixtures that exercise real validation (P-011).
 - Demo identities renamed (`demoRider1`/`demoDriver1`) and migrated live on Atlas via
   `scripts/reset-demo-accounts.js`; documented in `README.md` (P-011 follow-up).
-- Current test baseline: backend **173/173**, frontend **59/59** (up from 164/59 at Layer 4).
+- Test baseline at the time: backend **173/173**, frontend **59/59** (up from 164/59 at Layer 4) —
+  superseded by later post-ship fixes; see "Current status" at the top of this file for the real
+  current count.
 - [x] **Layer 5 — README-as-paper & defense.** `README.md` rewritten from the pre-upgrade
       "student" version into the project paper: live links (UI/API/Grafana) + rider/driver demo
       creds up top (admin dropped per griefing-reduction call), deployed-state ASCII architecture
@@ -408,10 +417,10 @@ P-007-style "looks wired up, silently isn't" bugs:
   separately logged with a P-number), so this run also cleared all ride history.
 
 ## How to resume
-1. Read this file, then `CLAUDE.md`. P-006 is closed — no action needed there. The post-Layer-4 hardening
-   pass (P-008 → P-011, above) is also done and verified (173/173 backend, 59/59 frontend) — no action
-   needed unless picking up the two Open items above.
-2. Resume **Layer 5 — README-as-paper & defense** (pending approval, not yet started). Build only that
-   layer, run its gate, update this file + `DECISIONS.md`, then STOP and ask for approval before anything
-   further. The README must reflect the current demo credentials (`demoRider1`/`demoDriver1`), the 10-digit
-   phone format, the lockout story, and the 173/173 + 59/59 test baseline — not the Layer-4-era numbers.
+1. Read this file, then `CLAUDE.md`. All 6 layers are shipped, including **Layer 5 — README-as-paper**
+   (see the Layer checklist above — this was previously mis-stated as pending in this section; it shipped
+   as commit `e95217a`). All Open items above are resolved. Current verified baseline: backend **184/184**,
+   frontend **59/59**, CI green (see "Current status" at the top of this file).
+2. There is no queued layer or pending approval to act on. Wait for the user's next request. If resuming
+   after a long gap, sanity-check the live deploy (`/health`, a demo login) before assuming anything above
+   is still true — free-tier hosts and long idle periods are the likeliest sources of drift.
