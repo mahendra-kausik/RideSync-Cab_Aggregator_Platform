@@ -1,5 +1,5 @@
 const { Ride } = require('../models');
-const { MatchingService, FareService } = require('../services');
+const { MatchingService, FareService, RoutingService } = require('../services');
 const socketService = require('../services/socketService');
 const mongoose = require('mongoose');
 
@@ -61,9 +61,10 @@ class RideController {
         });
       }
 
-      // Calculate distance and duration
-      const distance = RideController.calculateDistance(pickupCoords, destCoords);
-      const duration = RideController.estimateDuration(distance);
+      // Real road-route distance/duration (falls back to straight-line if OSRM is
+      // unreachable) - this becomes the canonical number for fare AND every display
+      // surface, so nothing shows straight-line first and swaps to route distance later.
+      const { distanceKm: distance, durationMin: duration } = await RoutingService.getRoute(pickupCoords, destCoords);
 
       console.log('🔍 Debug - Calculated distance:', distance);
       console.log('🔍 Debug - Calculated duration:', duration);
@@ -164,9 +165,9 @@ class RideController {
         });
       }
 
-      // Calculate distance and duration
-      const distance = RideController.calculateDistance(pickupCoords, destCoords);
-      const duration = RideController.estimateDuration(distance);
+      // Real road-route distance/duration, same as bookRide - keeps the pre-booking preview
+      // consistent with what booking will actually produce and charge.
+      const { distanceKm: distance, durationMin: duration } = await RoutingService.getRoute(pickupCoords, destCoords);
 
       // Minimum distance validation (100 meters = 0.1 km)
       if (distance < 0.1) {

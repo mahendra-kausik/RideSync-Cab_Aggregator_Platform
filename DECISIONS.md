@@ -1844,3 +1844,57 @@
 - **Tradeoffs / risks:** None identified — every change is a stricter/additional condition on an already
   atomic operation; no existing success path is narrowed. 3 new backend tests cover the guards directly
   (rejected-driver re-offer, expired-but-unswept accept, `getPendingRides` exclusion).
+
+## D-019 — Server-side OSRM route as the canonical distance/duration/fare source, replacing Haversine
+- **Date / Layer:** 2026-08-03 / P-024 Part B
+- **Context:** Three related reports: the driver's offer card showed distance but no duration, and the
+  distance was straight-line (Haversine) while the rider saw the correct route distance for the same ride;
+  duration/ETA was computed from straight-line distance in multiple places; and several UI surfaces showed
+  the Haversine number first, then flickered to an independently-fetched OSRM road-route number once that
+  resolved. This is the same class of bug as P-012/P-013/P-014 (documented earlier in this file), which
+  patched it by making every display surface independently fetch OSRM client-side and fall back to the
+  persisted Haversine value if that fetch hadn't resolved yet — a real fix for "which number is shown" but
+  not for "why are there two numbers and a visible swap between them" in the first place.
+- **Decision:** Compute the real road-route distance/duration **once, server-side**, at booking
+  (`bookRide`) and at fare-preview time (`getFareEstimate`), via a new `RoutingService` (OSRM
+  `router.project-osrm.org`, `overview=false`), and persist/return that as the canonical
+  `Ride.estimatedDistance`/`estimatedDuration`. `FareService.calculateFare` receives the same numbers, so
+  fare is consistent with every displayed distance/duration by construction, not by convention. Every
+  display surface (`RiderBookPage` overlay, `OfferCard`, `PendingRidesSection`, `ActiveRideSection`) now
+  reads that persisted/returned value directly instead of independently re-fetching OSRM for the number —
+  eliminating both the flicker and the possibility of disagreement. Client-side OSRM fetches are **not**
+  removed entirely: the map polyline geometry (the visual route line) still needs a client fetch, since
+  geometry isn't persisted server-side (would bloat `Ride` documents for no benefit — it's a display-only
+  concern re-derivable from the same deterministic pickup/destination coordinates on demand); only the
+  *numeric* distance/duration extracted from those fetches is no longer used.
+- **Why:** This directly reverses P-012's rejected alternative ("switching the backend to real OSRM road
+  distance for fare/matching too... rejected as much larger scope... changes fare amounts... for a
+  cosmetic mismatch") — re-litigated and reversed here because the user explicitly confirmed both
+  consequences P-012 flagged as reasons to reject it: (1) fare increasing slightly since route distance is
+  always ≥ straight-line, confirmed as the intended fix rather than a side effect to avoid; and (2) this is
+  no longer "a cosmetic mismatch" — it now includes a new driver-facing surface (`OfferCard`, shipped after
+  P-012/013/014) with no OSRM fetch at all, so the client-fetch-and-fallback pattern would need to be
+  re-implemented a fourth time rather than reused, which is exactly the kind of repeated one-off patching
+  that motivates fixing the root cause instead of the symptom.
+- **Alternatives considered:** Repeating the P-014 pattern once more for `OfferCard` (client-side OSRM
+  fetch + fallback to persisted Haversine) — rejected; it would fix issue #1 (missing duration, wrong
+  distance) but not issue #3 (the flicker itself, and the duplicated per-surface network calls), and adds a
+  fourth copy of logic already duplicated three times. Computing the route server-side but keeping fare on
+  Haversine (display-only fix) — considered and explicitly rejected by the user in plan review, since it
+  would leave the *fare breakdown* disagreeing with the *displayed* distance on the same screen, a new,
+  smaller version of the same class of bug.
+- **Tradeoffs / risks:** Booking now depends on an external network call (mitigated: wrapped in
+  `GracefulDegradationService`'s circuit-breaker pattern via a new `routing` breaker, ~5s timeout, falls
+  back to the existing Haversine `calculateDistance`/`estimateDuration` if OSRM is slow/down — confirmed
+  with the user that booking must never hard-fail because of this). Fares increase slightly (typically
+  10-30%, route distance vs. straight-line) versus before this change — confirmed intended. Historical
+  rides booked before this change keep their Haversine `estimatedDistance`/`estimatedDuration` (nothing is
+  backfilled) — new bookings only, consistent with how this codebase has always treated schema/calculation
+  changes (see P-021's earnings-filter precedent: query/calculation changes apply going forward, not
+  retroactively).
+- **Supersedes:** P-012's "Alternatives considered" rejection of server-side OSRM (item 1 of that entry's
+  alternatives only; P-012's other decisions — showing `currentRide.estimatedDistance` post-booking and the
+  `getPendingRides` availability gate — still stand, they're just now backed by an OSRM-sourced number
+  instead of a Haversine one). Also supersedes P-013/P-014's fallback-fetch pattern going forward: those
+  fixes remain correct historical record of what shipped at the time, but the pattern they established is
+  no longer how new distance/duration display code should be written in this codebase.

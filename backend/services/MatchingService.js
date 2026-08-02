@@ -176,7 +176,7 @@ class MatchingService {
      */
     static async _notifyOffer(rideId, driver, offerExpiresAt) {
         try {
-            const ride = await Ride.findById(rideId).select('pickup destination fare estimatedDistance');
+            const ride = await Ride.findById(rideId).select('pickup destination fare estimatedDistance estimatedDuration');
             if (!ride) {
                 return;
             }
@@ -187,6 +187,7 @@ class MatchingService {
                 destination: ride.destination,
                 estimatedFare: ride.fare.estimated,
                 estimatedDistance: ride.estimatedDistance,
+                estimatedDuration: ride.estimatedDuration,
                 expiresAt: offerExpiresAt
             });
 

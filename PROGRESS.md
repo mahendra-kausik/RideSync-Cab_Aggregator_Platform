@@ -6,10 +6,9 @@
 
 ## Current status
 **As of 2026-08-03: all 6 layers shipped (Layer 5 — README-as-paper — is done, see the Layer checklist
-below), P-006 → P-022 post-ship fixes shipped and verified. P-023 (both phases) shipped and pushed. P-024
-(offer-expiry race) shipped this session. Backend 192/192 tests, frontend type-check clean, 59/59 tests.
-Part B of the same investigation (server-side OSRM route as the single source of truth for distance/
-duration/fare, replacing Haversine) is planned but not yet built — see Open items.**
+below), P-006 → P-022 post-ship fixes shipped and verified. P-023 (both phases) and P-024 (both parts,
+including D-019's OSRM-as-canonical-distance change) shipped this session. Backend 196/196 tests, frontend
+type-check clean, 59/59 tests. Not yet pushed to remote or re-verified against a live deploy.**
 The narrative below is
 kept as the historical build log; each entry's numbers are accurate as of when it was written, not
 necessarily current — see `PROGRESS.md`'s per-P-XXX entries further down for the latest state of any
@@ -444,20 +443,24 @@ P-007-style "looks wired up, silently isn't" bugs:
   atomic MongoDB filter additions (`rejectedBy`/`offerExpiresAt` guards on the existing `findOneAndUpdate`
   calls — no new read-then-check races introduced) plus a client-side self-disable in `OfferCard` at 0s.
   3 new backend tests. Backend **192/192**, frontend type-check clean, **59/59** frontend tests.
+- D-019 — Same investigation as P-024, second half: distance/duration/fare were computed from straight-line
+  (Haversine) distance, and several UI surfaces independently re-fetched OSRM client-side for display,
+  causing a "shows straight-line first, then swaps to route distance" flicker and a driver-vs-rider number
+  mismatch (the driver's new `OfferCard` in particular showed distance but no duration at all, and the
+  straight-line number). Full writeup in DECISIONS.md D-019 (explicitly reverses part of P-012's earlier
+  rejection of server-side OSRM). New `RoutingService` computes the real OSRM route once, server-side, in
+  `bookRide` and `getFareEstimate`, wrapped in `GracefulDegradationService`'s circuit-breaker pattern (new
+  `routing` breaker) with a Haversine fallback if OSRM is slow/down — booking never hard-fails on this.
+  That number is now `Ride.estimatedDistance`/`estimatedDuration`, feeding `FareService` directly, so fare
+  and every displayed number agree by construction. Removed the independent OSRM-for-numbers fetches from
+  `RiderBookPage`, `PendingRidesSection`'s `RideDistance`, and `DriverDashboardPage`'s `fetchRoute` (kept
+  the client OSRM fetches that exist purely to draw the map polyline — geometry isn't persisted
+  server-side). Added `estimatedDuration` to the `ride:offer` socket payload and `OfferCard`'s display.
+  Fares increase slightly for new bookings (route distance ≥ straight-line) — confirmed intended, not a
+  side effect. 4 new `RoutingService` tests (OSRM success, unreachable/non-2xx/no-route fallback paths, all
+  mocking `fetch`). Backend **196/196**, frontend type-check clean, **59/59** frontend tests.
 
 ## Open items
-- **P-024 Part B not started** (same investigation, deferred by design — see `DECISIONS.md` for the plan
-  discussion): distance/duration/fare are still computed from straight-line (Haversine) distance, and
-  several UI surfaces independently re-fetch OSRM client-side for display, causing a "shows straight-line
-  first, then swaps to route distance" flicker and a driver-vs-rider number mismatch. Confirmed approach:
-  move the OSRM route calculation server-side into `bookRide`/`getFareEstimate` (new `RoutingService`,
-  wrapped in `GracefulDegradationService`'s circuit-breaker pattern with a Haversine fallback if OSRM is
-  down), persist it as the canonical `Ride.estimatedDistance`/`estimatedDuration`, and have every display
-  surface (rider overlay, `OfferCard`, `PendingRidesSection`, `ActiveRideSection`) read that persisted value
-  instead of re-deriving it. This also changes fare amounts slightly (route distance ≥ straight-line) —
-  already confirmed as the intended outcome, not a side effect to avoid. See the plan file
-  `~/.claude/plans/right-now-when-a-soft-wind.md` for full file-by-file detail; awaiting go-ahead to
-  implement.
 - ~~P-009: live re-verification~~ — **resolved**: confirmed live from two different devices; `trust proxy`
   fix works (distinct client IPs, IP+account lockout genuinely IP-scoped in production).
 - ~~Stray Atlas account (phone `4444444444`)~~ — **resolved**: deleted from Atlas by the user. Live `users`
@@ -470,12 +473,10 @@ P-007-style "looks wired up, silently isn't" bugs:
 ## How to resume
 1. Read this file, then `CLAUDE.md`. All 6 layers are shipped, including **Layer 5 — README-as-paper**
    (see the Layer checklist above — this was previously mis-stated as pending in this section; it shipped
-   as commit `e95217a`). P-023 (both phases) and P-024 are shipped. Current verified baseline: backend
-   **192/192**, frontend type-check clean, **59/59** — not yet re-checked in CI, and the live deploy has
-   not been re-verified against these changes.
-2. **Open work:** P-024 Part B (server-side OSRM route as the canonical distance/duration/fare source,
-   replacing Haversine) is planned and approved but not yet implemented — see Open items above and the
-   plan file `~/.claude/plans/right-now-when-a-soft-wind.md`.
-3. If resuming after a long gap, sanity-check the live deploy (`/health`, a demo login, an actual
-   two-browser ride-offer test) before assuming anything above is still true — free-tier hosts and long
-   idle periods are the likeliest sources of drift.
+   as commit `e95217a`). P-023 (both phases), P-024, and D-019 are shipped. Current verified baseline:
+   backend **196/196**, frontend type-check clean, **59/59** — not yet re-checked in CI, and the live
+   deploy has not been re-verified against these changes.
+2. No queued layer or open plan to act on. If resuming after a long gap, sanity-check the live deploy
+   (`/health`, a demo login, an actual two-browser ride-offer test with distance/fare comparison) before
+   assuming anything above is still true — free-tier hosts and long idle periods are the likeliest sources
+   of drift.

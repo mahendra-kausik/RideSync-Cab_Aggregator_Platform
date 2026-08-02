@@ -33,7 +33,6 @@ const DriverDashboardPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [route, setRoute] = useState<[number, number][] | null>(null);
-  const [routeMetrics, setRouteMetrics] = useState<{ distanceKm: number; durationMin: number } | null>(null);
   const [acceptingRideId, setAcceptingRideId] = useState<string | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [activeOffer, setActiveOffer] = useState<{
@@ -42,6 +41,7 @@ const DriverDashboardPage: React.FC = () => {
     destination: Ride['destination'];
     estimatedFare: number;
     estimatedDistance: number;
+    estimatedDuration: number;
     expiresAt: string;
   } | null>(null);
   const [decliningOffer, setDecliningOffer] = useState(false);
@@ -69,7 +69,10 @@ const DriverDashboardPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [geolocation.latitude, geolocation.longitude]);
 
-  // Fetch route from OSRM when activeRide changes
+  // Fetch route geometry from OSRM when activeRide changes - for drawing the map polyline
+  // only. Distance/duration are no longer read from this response; ride.estimatedDistance/
+  // estimatedDuration (computed server-side by RoutingService at booking time) are already
+  // the real route numbers, so there's nothing to derive here.
   useEffect(() => {
     const fetchRoute = async () => {
       if (activeRide && activeRide.pickup && activeRide.destination) {
@@ -80,34 +83,24 @@ const DriverDashboardPage: React.FC = () => {
           const response = await fetch(osrmUrl);
           const data = await response.json();
           if (data.routes && data.routes.length > 0) {
-            const route0 = data.routes[0];
-            const coords = route0.geometry.coordinates;
+            const coords = data.routes[0].geometry.coordinates;
             if (coords.length > 2) {
               setRoute(coords);
-              // OSRM provides distance in meters and duration in seconds
-              setRouteMetrics({
-                distanceKm: (route0.distance || 0) / 1000,
-                durationMin: (route0.duration || 0) / 60,
-              });
               console.log('Driver: OSRM route fetched successfully:', coords.length, 'points');
             } else {
               setRoute(null);
-              setRouteMetrics(null);
               console.warn('Driver: OSRM returned only', coords.length, 'points');
             }
           } else {
             setRoute(null);
-            setRouteMetrics(null);
             console.warn('Driver: No routes found in OSRM response');
           }
         } catch (err) {
           console.error('Driver: Failed to fetch OSRM route:', err);
           setRoute(null);
-          setRouteMetrics(null);
         }
       } else {
         setRoute(null);
-        setRouteMetrics(null);
       }
     };
     fetchRoute();
@@ -438,7 +431,6 @@ const DriverDashboardPage: React.FC = () => {
             <ActiveRideSection
               ride={activeRide}
               onStatusUpdate={handleRideStatusUpdate}
-              distanceKm={routeMetrics?.distanceKm}
               updatingStatus={updatingStatus}
             />
           ) : activeOffer ? (

@@ -33,7 +33,6 @@ const RiderBookPage: React.FC = () => {
   const [selectionMode, setSelectionMode] = useState<'pickup' | 'destination' | null>(null);
   const [driverLocation, setDriverLocation] = useState<[number, number] | null>(null);
   const [route, setRoute] = useState<[number, number][] | null>(null);
-  const [routeMetrics, setRouteMetrics] = useState<{ distanceKm: number; durationMin: number } | null>(null);
 
   // Booking states
   const [fareEstimate, setFareEstimate] = useState<FareEstimate | null>(null);
@@ -245,37 +244,33 @@ const RiderBookPage: React.FC = () => {
     setError(null);
 
     try {
+      // fareEstimate.distance/.duration are already the real OSRM route numbers
+      // (RoutingService, server-side) - this fetch is only for the map polyline geometry.
       const estimate = await rideService.getFareEstimate(pickup.coordinates, destination.coordinates);
       setFareEstimate(estimate);
 
-      // Fetch real route from OSRM API
       try {
         const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${pickup.coordinates[0]},${pickup.coordinates[1]};${destination.coordinates[0]},${destination.coordinates[1]}?overview=full&geometries=geojson`;
         const response = await fetch(osrmUrl);
         const data = await response.json();
 
         if (data.routes && data.routes.length > 0) {
-          const r0 = data.routes[0];
-          const coords = r0.geometry.coordinates;
+          const coords = data.routes[0].geometry.coordinates;
           if (coords.length > 2) {
             setRoute(coords);
-            setRouteMetrics({ distanceKm: (r0.distance || 0) / 1000, durationMin: (r0.duration || 0) / 60 });
             console.log('OSRM route fetched successfully:', coords.length, 'points');
           } else {
             // Fallback to null route if OSRM returns too few points
             setRoute(null);
-            setRouteMetrics(null);
             console.warn('OSRM returned only', coords.length, 'points');
           }
         } else {
           setRoute(null);
-          setRouteMetrics(null);
           console.warn('No routes found in OSRM response');
         }
       } catch (osrmErr) {
         console.error('Failed to fetch OSRM route:', osrmErr);
         setRoute(null);
-        setRouteMetrics(null);
       }
     } catch (err: any) {
       setError(err.message);
@@ -619,13 +614,15 @@ const RiderBookPage: React.FC = () => {
             showRoute={!!pickup && !!destination}
           />
 
-          {/* Route information overlay - the OSRM road-route distance, same source
-              the driver's ActiveRideSection uses once a ride is accepted (both fetch
-              OSRM for the same pickup/destination coords, so the numbers agree). */}
-          {fareEstimate && pickup && destination && (
+          {/* Route information overlay. Once a ride exists, its estimatedDistance/estimatedDuration
+              are the canonical OSRM road-route numbers (RoutingService, computed once server-side
+              at booking) - the same numbers the driver's ActiveRideSection shows. Pre-booking,
+              fareEstimate.distance/.duration come from the same RoutingService call via
+              /rides/estimate, so the two never disagree. */}
+          {(currentRide || fareEstimate) && pickup && destination && (
             <div className={`route-info ${driverLocation ? 'with-driver' : ''}`}>
-              <div>Distance: {(routeMetrics?.distanceKm ?? fareEstimate.distance).toFixed(1)} km</div>
-              <div>Est. Time: {Math.round(routeMetrics?.durationMin ?? fareEstimate.duration)} min</div>
+              <div>Distance: {(currentRide?.estimatedDistance ?? fareEstimate!.distance).toFixed(1)} km</div>
+              <div>Est. Time: {Math.round(currentRide?.estimatedDuration ?? fareEstimate!.duration)} min</div>
               {driverLocation && <div>🚗 Driver tracking active</div>}
             </div>
           )}

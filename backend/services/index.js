@@ -6,8 +6,10 @@
 
 const MatchingService = require('./MatchingService');
 const FareService = require('./FareService');
+const RoutingService = require('./RoutingService');
 
 module.exports = {
   MatchingService,
-  FareService
+  FareService,
+  RoutingService
 };

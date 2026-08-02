@@ -8,6 +8,7 @@ interface OfferCardProps {
     destination: Ride['destination'];
     estimatedFare: number;
     estimatedDistance: number;
+    estimatedDuration: number;
     expiresAt: string;
   };
   onAccept: (rideId: string) => void;
@@ -83,6 +84,10 @@ const OfferCard: React.FC<OfferCardProps> = ({ offer, onAccept, onDecline, accep
               <div className="meta-item">
                 <span className="meta-label">Distance</span>
                 <span className="meta-value">{offer.estimatedDistance.toFixed(1)} km</span>
+              </div>
+              <div className="meta-item">
+                <span className="meta-label">Est. Time</span>
+                <span className="meta-value">{Math.ceil(offer.estimatedDuration)} min</span>
               </div>
             </div>
           </div>

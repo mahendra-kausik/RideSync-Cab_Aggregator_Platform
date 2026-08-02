@@ -4,8 +4,6 @@ import { Ride } from '../../../types';
 interface ActiveRideSectionProps {
   ride: Ride;
   onStatusUpdate: (status: Ride['status']) => void;
-  // Optional: distance calculated from OSRM route (in km)
-  distanceKm?: number;
   // True while a status-update request is in flight - disables the action
   // buttons so a double-click can't fire two requests for the same transition.
   updatingStatus?: boolean;
@@ -14,7 +12,6 @@ interface ActiveRideSectionProps {
 const ActiveRideSection: React.FC<ActiveRideSectionProps> = ({
   ride,
   onStatusUpdate,
-  distanceKm,
   updatingStatus
 }) => {
   const rider = typeof ride.riderId === 'object' ? ride.riderId : null;
@@ -96,9 +93,10 @@ const ActiveRideSection: React.FC<ActiveRideSectionProps> = ({
             <strong>Fare:</strong> {formatCurrency(ride.fare.estimated)}
           </div>
           <div className="info-item">
-            <strong>Distance:</strong> {(
-              typeof distanceKm === 'number' ? distanceKm : ride.estimatedDistance
-            ).toFixed(1)} km
+            <strong>Distance:</strong> {ride.estimatedDistance.toFixed(1)} km
+          </div>
+          <div className="info-item">
+            <strong>Est. Time:</strong> {Math.ceil(ride.estimatedDuration)} min
           </div>
           {ride.timeline.startedAt && (
             <div className="info-item">

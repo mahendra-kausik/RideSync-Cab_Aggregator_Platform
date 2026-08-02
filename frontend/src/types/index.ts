@@ -111,7 +111,7 @@ export interface SocketEvents {
   'ride:status-updated': (data: { rideId: string; status: Ride['status']; updatedBy: string; userRole: User['role']; location?: { latitude: number; longitude: number } | null; timestamp: string }) => void;
   'ride:driver-assigned': (data: { rideId: string; driver: User; estimatedArrival: number }) => void;
   'ride:driver-location': (data: { rideId: string; location: [number, number] }) => void; // legacy client format
-  'ride:offer': (data: { rideId: string; pickup: Location; destination: Location; estimatedFare: number; estimatedDistance: number; expiresAt: string }) => void;
+  'ride:offer': (data: { rideId: string; pickup: Location; destination: Location; estimatedFare: number; estimatedDistance: number; estimatedDuration: number; expiresAt: string }) => void;
   'ride:offer-expired': (data: { rideId: string }) => void;
 
   // Room management

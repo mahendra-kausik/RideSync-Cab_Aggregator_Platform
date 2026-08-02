@@ -95,8 +95,16 @@ class GracefulDegradationService {
       maps: new CircuitBreaker('Maps Service', 3, 5000, 30000),
       sms: new CircuitBreaker('SMS Service', 3, 10000, 60000),
       payment: new CircuitBreaker('Payment Service', 2, 15000, 120000),
-      geocoding: new CircuitBreaker('Geocoding Service', 3, 8000, 45000)
+      geocoding: new CircuitBreaker('Geocoding Service', 3, 8000, 45000),
+      routing: new CircuitBreaker('Routing Service', 3, 5000, 30000)
     };
+  }
+
+  /**
+   * Routing service (OSRM) with fallback to straight-line distance
+   */
+  async getRoute(operation, fallback) {
+    return await this.circuitBreakers.routing.execute(operation, fallback);
   }
 
   /**
