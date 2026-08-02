@@ -351,6 +351,137 @@ describe('MatchingService - Performance Tests', () => {
     });
 });
 
+describe('MatchingService - Offer / Accept / Decline flow', () => {
+    // These exercise real DB writes (offerRideToDriver etc. don't check
+    // DISABLE_MATCHING themselves), but re-matching after a decline/expiry goes
+    // through findNearestDriver, which does - so it must be unset for those cases.
+    beforeEach(() => {
+        delete process.env.DISABLE_MATCHING;
+    });
+
+    afterEach(() => {
+        process.env.DISABLE_MATCHING = 'true';
+    });
+
+    // createTestRide's own default fare/distance/duration fields don't satisfy
+    // Ride's required-field validation, so tests here supply their own.
+    const makeTestRide = (overrides = {}) => global.testUtils.createTestRide({
+        estimatedDistance: 5,
+        estimatedDuration: 12,
+        fare: {
+            estimated: 15.5,
+            breakdown: { baseFare: 5, distanceFare: 8, timeFare: 2.5, surgeFare: 0 }
+        },
+        ...overrides
+    });
+
+    it('offerRideToDriver puts the ride into matched state with an offer deadline, not accepted', async () => {
+        const driver = await global.testUtils.createTestDriver();
+        const ride = await makeTestRide();
+
+        const result = await MatchingService.offerRideToDriver(ride._id, driver._id);
+
+        expect(result.success).toBe(true);
+        expect(result.offerExpiresAt).toBeInstanceOf(Date);
+
+        const { Ride } = require('../../models');
+        const updated = await Ride.findById(ride._id);
+        expect(updated.status).toBe('matched');
+        expect(updated.driverId.toString()).toBe(driver._id.toString());
+        expect(updated.timeline.acceptedAt).toBeNull();
+        expect(updated.offerExpiresAt).not.toBeNull();
+    });
+
+    it('acceptOffer moves matched -> accepted only for the offered driver', async () => {
+        const driver = await global.testUtils.createTestDriver();
+        const otherDriver = await global.testUtils.createTestDriver({ phone: '1000000001' });
+        const ride = await makeTestRide();
+        await MatchingService.offerRideToDriver(ride._id, driver._id);
+
+        const wrongDriverResult = await MatchingService.acceptOffer(ride._id, otherDriver._id);
+        expect(wrongDriverResult.success).toBe(false);
+        expect(wrongDriverResult.error).toBe('ASSIGNMENT_CONFLICT');
+
+        const result = await MatchingService.acceptOffer(ride._id, driver._id);
+        expect(result.success).toBe(true);
+        expect(result.ride.status).toBe('accepted');
+        expect(result.ride.timeline.acceptedAt).not.toBeNull();
+        expect(result.ride.offerExpiresAt).toBeNull();
+    });
+
+    it('declineOffer reverts the ride to requested, records rejectedBy, releases the driver, and re-offers to the next nearest driver', async () => {
+        const nearDriver = await global.testUtils.createTestDriver({
+            phone: '1000000002',
+            driverInfo: {
+                licenseNumber: 'DL1',
+                vehicleDetails: { make: 'Toyota', model: 'Camry', plateNumber: 'AAA111', color: 'Blue' },
+                isAvailable: true,
+                currentLocation: { type: 'Point', coordinates: [-74.006, 40.7128] } // exact pickup
+            }
+        });
+        const fartherDriver = await global.testUtils.createTestDriver({
+            phone: '1000000003',
+            driverInfo: {
+                licenseNumber: 'DL2',
+                vehicleDetails: { make: 'Honda', model: 'Civic', plateNumber: 'BBB222', color: 'Red' },
+                isAvailable: true,
+                currentLocation: { type: 'Point', coordinates: [-74.02, 40.73] } // a bit farther
+            }
+        });
+        const ride = await makeTestRide();
+
+        await MatchingService.offerRideToDriver(ride._id, nearDriver._id);
+
+        const declineResult = await MatchingService.declineOffer(ride._id, nearDriver._id);
+        expect(declineResult.success).toBe(true);
+
+        const { Ride, User } = require('../../models');
+        const updated = await Ride.findById(ride._id);
+        expect(updated.rejectedBy.map(id => id.toString())).toContain(nearDriver._id.toString());
+
+        // Re-matched to the other available driver instead of being stranded
+        expect(updated.status).toBe('matched');
+        expect(updated.driverId.toString()).toBe(fartherDriver._id.toString());
+
+        // Declining driver is available again
+        const releasedDriver = await User.findById(nearDriver._id);
+        expect(releasedDriver.driverInfo.isAvailable).toBe(true);
+    });
+
+    it('expireStaleOffers reverts a lapsed offer, records rejectedBy, and releases the driver', async () => {
+        const driver = await global.testUtils.createTestDriver();
+        const ride = await makeTestRide();
+        await MatchingService.offerRideToDriver(ride._id, driver._id);
+
+        // Force the offer into the past so the sweeper picks it up
+        const { Ride, User } = require('../../models');
+        await Ride.findByIdAndUpdate(ride._id, { offerExpiresAt: new Date(Date.now() - 1000) });
+
+        const revertedCount = await MatchingService.expireStaleOffers();
+        expect(revertedCount).toBe(1);
+
+        const updated = await Ride.findById(ride._id);
+        expect(updated.rejectedBy.map(id => id.toString())).toContain(driver._id.toString());
+
+        const releasedDriver = await User.findById(driver._id);
+        expect(releasedDriver.driverInfo.isAvailable).toBe(true);
+    });
+
+    it('does not re-offer to a driver already in rejectedBy', async () => {
+        const decliningDriver = await global.testUtils.createTestDriver();
+        const ride = await makeTestRide();
+
+        await MatchingService.offerRideToDriver(ride._id, decliningDriver._id);
+        await MatchingService.declineOffer(ride._id, decliningDriver._id);
+
+        // Only one driver exists and they already declined - no one left to offer to
+        const { Ride } = require('../../models');
+        const updated = await Ride.findById(ride._id);
+        expect(updated.status).toBe('requested');
+        expect(updated.driverId).toBeNull();
+    });
+});
+
 describe('MatchingService - Edge Cases', () => {
     it('should handle north pole coordinates', () => {
         const distance = MatchingService._calculateDistance(0, 90, 180, 90);

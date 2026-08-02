@@ -10,6 +10,7 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 import MapComponent from '../../components/common/MapComponent';
 import ActiveRideSection from './components/ActiveRideSection';
 import PendingRidesSection from './components/PendingRidesSection';
+import OfferCard from './components/OfferCard';
 import './DriverDashboard.css';
 
 interface DriverStats {
@@ -35,6 +36,15 @@ const DriverDashboardPage: React.FC = () => {
   const [routeMetrics, setRouteMetrics] = useState<{ distanceKm: number; durationMin: number } | null>(null);
   const [acceptingRideId, setAcceptingRideId] = useState<string | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [activeOffer, setActiveOffer] = useState<{
+    rideId: string;
+    pickup: Ride['pickup'];
+    destination: Ride['destination'];
+    estimatedFare: number;
+    estimatedDistance: number;
+    expiresAt: string;
+  } | null>(null);
+  const [decliningOffer, setDecliningOffer] = useState(false);
   // loadPendingRides is called from several places (mount, socket events,
   // availability toggle, manual refresh) - responses can resolve out of
   // order, so track the latest request and drop stale ones.
@@ -108,8 +118,12 @@ const DriverDashboardPage: React.FC = () => {
   // search against instead of whatever was set at registration. Throttled to
   // avoid a DB write on every watchPosition tick (~1/sec with high accuracy).
   useEffect(() => {
-    if (!geolocation.latitude || !geolocation.longitude) return;
-    if (!activeRide && !isAvailable) return;
+    if (!geolocation.latitude || !geolocation.longitude) {
+      return;
+    }
+    if (!activeRide && !isAvailable) {
+      return;
+    }
 
     const coords: [number, number] = [geolocation.longitude, geolocation.latitude];
     const last = lastSentLocationRef.current;
@@ -170,9 +184,18 @@ const DriverDashboardPage: React.FC = () => {
 
   useSocketEvent('ride:driver-assigned', (data) => {
     if (data.driver._id === user?._id) {
+      setActiveOffer(null);
       loadActiveRide();
       loadPendingRides();
     }
+  });
+
+  useSocketEvent('ride:offer', (data) => {
+    setActiveOffer(data);
+  });
+
+  useSocketEvent('ride:offer-expired', (data) => {
+    setActiveOffer(prev => (prev?.rideId === data.rideId ? null : prev));
   });
 
   const loadDashboardData = async () => {
@@ -281,6 +304,7 @@ const DriverDashboardPage: React.FC = () => {
       setError(null);
       const acceptedRide = await rideService.acceptRide(rideId);
       setActiveRide(acceptedRide);
+      setActiveOffer(prev => (prev?.rideId === rideId ? null : prev));
       setPendingRides([]);
       // Update user availability to false after accepting
       if (user?.driverInfo) {
@@ -294,6 +318,22 @@ const DriverDashboardPage: React.FC = () => {
       await loadPendingRides();
     } finally {
       setAcceptingRideId(null);
+    }
+  };
+
+  const handleDeclineOffer = async (rideId: string) => {
+    if (decliningOffer) {
+      return;
+    }
+    try {
+      setDecliningOffer(true);
+      setError(null);
+      await rideService.declineRide(rideId);
+      setActiveOffer(prev => (prev?.rideId === rideId ? null : prev));
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setDecliningOffer(false);
     }
   };
 
@@ -400,6 +440,14 @@ const DriverDashboardPage: React.FC = () => {
               onStatusUpdate={handleRideStatusUpdate}
               distanceKm={routeMetrics?.distanceKm}
               updatingStatus={updatingStatus}
+            />
+          ) : activeOffer ? (
+            <OfferCard
+              offer={activeOffer}
+              onAccept={handleAcceptRide}
+              onDecline={handleDeclineOffer}
+              accepting={acceptingRideId === activeOffer.rideId}
+              declining={decliningOffer}
             />
           ) : (
             /* Pending Rides Section */

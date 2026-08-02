@@ -120,7 +120,12 @@ const rideSchema = new mongoose.Schema({
   payment: { type: paymentSchema, required: true, default: () => ({}) },
   rating: { type: ratingSchema, default: () => ({}) },
   cancellationReason: { type: String, maxlength: 200, default: null },
-  specialInstructions: { type: String, maxlength: 300, default: null }
+  specialInstructions: { type: String, maxlength: 300, default: null },
+  // Sequential offer flow: while status is 'matched', driverId holds the driver
+  // currently being offered the ride and offerExpiresAt is when that offer lapses.
+  // rejectedBy accumulates drivers who declined or timed out, so re-matching skips them.
+  offerExpiresAt: { type: Date, default: null, index: true },
+  rejectedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -137,7 +142,7 @@ rideSchema.index({ 'destination.coordinates': '2dsphere' });
 // Status workflow validation
 const statusTransitions = {
   'requested': ['matched', 'cancelled'],
-  'matched': ['accepted', 'cancelled'],
+  'matched': ['accepted', 'requested', 'cancelled'],
   'accepted': ['in_progress', 'cancelled'],
   'in_progress': ['completed', 'cancelled'],
   'completed': [],

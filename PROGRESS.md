@@ -6,9 +6,10 @@
 
 ## Current status
 **As of 2026-08-03: all 6 layers shipped (Layer 5 — README-as-paper — is done, see the Layer checklist
-below), P-006 → P-022 post-ship fixes shipped and verified. P-023 Phase 1 (matching actually finds
-drivers) shipped this session; P-023 Phase 2 (offer/accept/decline flow) is planned but not started —
-see Open items. Backend 184/184 tests, frontend 59/59, CI not yet re-run for this session's changes.**
+below), P-006 → P-022 post-ship fixes shipped and verified. P-023 is fully shipped this session: Phase 1
+(matching actually finds drivers) and Phase 2 (sequential offer/accept/decline flow, D-018) are both
+done. Backend 189/189 tests (5 new offer-flow tests added), frontend type-check clean, 59/59 tests. Not
+yet pushed to remote or re-verified against a live deploy.**
 The narrative below is
 kept as the historical build log; each entry's numbers are accurate as of when it was written, not
 necessarily current — see `PROGRESS.md`'s per-P-XXX entries further down for the latest state of any
@@ -407,29 +408,33 @@ P-007-style "looks wired up, silently isn't" bugs:
   all 3 to `process.hrtime.bigint()` (nanosecond resolution). The 4th performance test (1000 iterations,
   100ms budget) was untouched — enough margin at that scale to not be timing-sensitive. Backend 184/184,
   lint clean. Full writeup in DECISIONS.md P-022.
-- P-023 (Phase 1 of 2) — User reported ride booking usually finds no driver, and when it does the ride is
+- P-023 Phase 1 — User reported ride booking usually finds no driver, and when it does the ride is
   auto-assigned with no acceptance step. Investigation found **three** independent root causes (full
   writeup in DECISIONS.md P-023): (1) an available-but-not-yet-on-a-ride driver's location was never
   written to the DB, so matching searched stale coordinates; (2) automatic matching threw on every attempt
   (`.toObject()` called on a `.lean()` result) and was silently caught, so it had never once succeeded —
   every prior successful match came through the manual pending-list Accept; (3) a driver with no GPS fix
-  yet fell back to an unfiltered global ride list, masking cause #1. This session (Phase 1 only) fixed all
-  three: split the driver location-update effect so the DB write isn't gated on an active ride (throttled
-  to >50m/>15s to avoid a write per GPS tick), removed the `.toObject()` crash, and replaced the global
-  fallback with an empty result + re-fetch once GPS resolves. Also removed dead Bengaluru-fallback pickup
-  code from the rider booking page — decided **against** re-enabling rider auto-geolocation (D-017): the
-  stub predates this repo's history and disabling it is likely *why* that Bengaluru fallback was never a
-  live problem; turning it back on would have activated it. Backend 184/184, frontend type-check clean,
-  59/59 frontend tests. **Phase 2 (offer/accept/decline flow — the acceptance-step half of the report) is
-  planned but not yet built** — see the plan file for the full design; needs a go-ahead per CLAUDE.md §2.
+  yet fell back to an unfiltered global ride list, masking cause #1. Fixed all three: split the driver
+  location-update effect so the DB write isn't gated on an active ride (throttled to >50m/>15s to avoid a
+  write per GPS tick), removed the `.toObject()` crash, and replaced the global fallback with an empty
+  result + re-fetch once GPS resolves. Also removed dead Bengaluru-fallback pickup code from the rider
+  booking page — decided **against** re-enabling rider auto-geolocation (D-017): the stub predates this
+  repo's history and disabling it is likely *why* that Bengaluru fallback was never a live problem; turning
+  it back on would have activated it.
+- P-023 Phase 2 — The other half of the same report: rides were auto-assigned (`requested → accepted` in
+  one atomic step) with no driver consent. Implemented sequential offers (full writeup in DECISIONS.md
+  D-018): nearest driver gets a 30s time-boxed `matched` offer via the new `MatchingService.offerRideToDriver`
+  (renamed from `assignRideToDriver`, same atomic guard/rollback structure); driver responds via the
+  existing `POST /rides/:id/accept` or the new `POST /rides/:id/decline`. Decline or a 30s timeout (an
+  in-process `setInterval` sweeper in `server.js`, `MatchingService.expireStaleOffers`, since a per-ride
+  `setTimeout` wouldn't survive a Render restart) reverts the ride to `requested`, records the driver in a
+  new `rejectedBy` array, releases their availability lock, and immediately re-matches excluding everyone
+  who's already passed. New `ride:offer`/`ride:offer-expired` socket events and a driver-side `OfferCard`
+  component (accept/decline buttons, live countdown) round it out. `Ride` schema gained `offerExpiresAt`
+  and `rejectedBy`. 5 new tests cover offer/accept/decline/expire/no-re-offer-to-rejected. Backend
+  **189/189**, frontend type-check clean, **59/59** frontend tests.
 
 ## Open items
-- **P-023 Phase 2 not started**: matching still auto-assigns (`status: 'accepted'`) the instant a driver
-  is found — there is still no offer/accept/decline step. Plan: nearest driver gets a 30s time-boxed
-  `matched` offer; decline/timeout re-offers to the next nearest via a `rejectedBy` list and an in-process
-  sweeper. Needs `Ride` schema fields (`offerExpiresAt`, `rejectedBy`), a `declineRide` endpoint, new
-  socket events, and frontend offer-card UI. See plan file `right-now-when-a-soft-wind.md` for the full
-  design (already reviewed with the user); awaiting go-ahead to implement.
 - ~~P-009: live re-verification~~ — **resolved**: confirmed live from two different devices; `trust proxy`
   fix works (distinct client IPs, IP+account lockout genuinely IP-scoped in production).
 - ~~Stray Atlas account (phone `4444444444`)~~ — **resolved**: deleted from Atlas by the user. Live `users`
@@ -442,10 +447,9 @@ P-007-style "looks wired up, silently isn't" bugs:
 ## How to resume
 1. Read this file, then `CLAUDE.md`. All 6 layers are shipped, including **Layer 5 — README-as-paper**
    (see the Layer checklist above — this was previously mis-stated as pending in this section; it shipped
-   as commit `e95217a`). Current verified baseline: backend **184/184**, frontend **59/59** (both re-run
-   after P-023 Phase 1's changes; not yet re-checked in CI).
-2. **Open work:** P-023 Phase 2 (ride offer/accept/decline flow) is planned but not implemented — see
-   Open items above and the plan file `~/.claude/plans/right-now-when-a-soft-wind.md`. Waiting on the
-   user's go-ahead per `CLAUDE.md` §2 before starting it.
-3. If resuming after a long gap, sanity-check the live deploy (`/health`, a demo login) before assuming
-   anything above is still true — free-tier hosts and long idle periods are the likeliest sources of drift.
+   as commit `e95217a`). P-023 (both phases) is shipped. Current verified baseline: backend **189/189**,
+   frontend type-check clean, **59/59** — not yet re-checked in CI, not yet pushed to remote, and the live
+   deploy has not been re-verified against these changes.
+2. No queued layer or open plan to act on. If resuming after a long gap, sanity-check the live deploy
+   (`/health`, a demo login, an actual two-browser ride-offer test) before assuming anything above is
+   still true — free-tier hosts and long idle periods are the likeliest sources of drift.

@@ -1,6 +1,7 @@
 const { User, Ride } = require('../models');
 const mongoose = require('mongoose');
 const { rideMatchDuration } = require('../config/metrics');
+const socketService = require('./socketService');
 
 /**
  * Driver Matching Service
@@ -23,27 +24,29 @@ class MatchingService {
     static INITIAL_RADIUS = 5000; // 5km in meters
     static RADIUS_EXPANSION_STEPS = [5000, 10000, 15000]; // 5km, 10km, 15km
     static MAX_DRIVERS_TO_CONSIDER = 10;
-    static DRIVER_RESPONSE_TIMEOUT = 60000; // 60 seconds
+    static DRIVER_RESPONSE_TIMEOUT = 30000; // 30 seconds to accept/decline an offer
 
     /**
-     * Find the nearest available driver for a ride request
+     * Find the nearest available driver for a ride request and offer them the ride
+     * (does not auto-accept - see offerRideToDriver).
      *
      * @param {number} pickupLongitude - Pickup location longitude
      * @param {number} pickupLatitude - Pickup location latitude
      * @param {string} rideId - Ride ID for assignment
      * @param {number} initialRadius - Initial search radius in meters (default: 5000)
+     * @param {string[]} excludeDriverIds - Drivers to skip (already offered/declined this ride)
      * @returns {Promise<Object>} Driver match result with driver info and metadata
      */
-    static async findNearestDriver(pickupLongitude, pickupLatitude, rideId, initialRadius = this.INITIAL_RADIUS) {
+    static async findNearestDriver(pickupLongitude, pickupLatitude, rideId, initialRadius = this.INITIAL_RADIUS, excludeDriverIds = []) {
         const start = process.hrtime.bigint();
         try {
-            return await this._findNearestDriver(pickupLongitude, pickupLatitude, rideId, initialRadius);
+            return await this._findNearestDriver(pickupLongitude, pickupLatitude, rideId, initialRadius, excludeDriverIds);
         } finally {
             rideMatchDuration.observe(Number(process.hrtime.bigint() - start) / 1e9);
         }
     }
 
-    static async _findNearestDriver(pickupLongitude, pickupLatitude, rideId, initialRadius = this.INITIAL_RADIUS) {
+    static async _findNearestDriver(pickupLongitude, pickupLatitude, rideId, initialRadius = this.INITIAL_RADIUS, excludeDriverIds = []) {
         try {
             // Skip matching in test environment to prevent background async tasks
             if (process.env.DISABLE_MATCHING === 'true') {
@@ -77,7 +80,8 @@ class MatchingService {
                 const drivers = await this._findAvailableDriversInRadius(
                     pickupLongitude,
                     pickupLatitude,
-                    radius
+                    radius,
+                    excludeDriverIds
                 );
 
                 if (drivers.length > 0) {
@@ -107,30 +111,34 @@ class MatchingService {
                     // Sort by distance (nearest first)
                     driversWithMetadata.sort((a, b) => a.distance - b.distance);
 
-                    // Attempt to assign the nearest driver
+                    // Offer to the nearest driver first
                     const nearestDriver = driversWithMetadata[0];
-                    const assignmentResult = await this.assignRideToDriver(rideId, nearestDriver._id);
+                    const offerResult = await this.offerRideToDriver(rideId, nearestDriver._id);
 
-                    if (assignmentResult.success) {
+                    if (offerResult.success) {
+                        this._notifyOffer(rideId, nearestDriver, offerResult.offerExpiresAt);
                         return {
                             success: true,
                             driver: nearestDriver,
                             searchRadius: radius,
                             totalDriversFound: drivers.length,
-                            assignedAt: new Date()
+                            offeredAt: new Date(),
+                            offerExpiresAt: offerResult.offerExpiresAt
                         };
                     }
 
-                    // If assignment failed, try next nearest driver
+                    // If the offer couldn't be placed (conflict), try the next nearest driver
                     for (let i = 1; i < driversWithMetadata.length; i++) {
-                        const fallbackResult = await this.assignRideToDriver(rideId, driversWithMetadata[i]._id);
+                        const fallbackResult = await this.offerRideToDriver(rideId, driversWithMetadata[i]._id);
                         if (fallbackResult.success) {
+                            this._notifyOffer(rideId, driversWithMetadata[i], fallbackResult.offerExpiresAt);
                             return {
                                 success: true,
                                 driver: driversWithMetadata[i],
                                 searchRadius: radius,
                                 totalDriversFound: drivers.length,
-                                assignedAt: new Date(),
+                                offeredAt: new Date(),
+                                offerExpiresAt: fallbackResult.offerExpiresAt,
                                 fallbackAssignment: true
                             };
                         }
@@ -159,29 +167,69 @@ class MatchingService {
     }
 
     /**
-     * Atomically assign a ride to a driver with conflict resolution
+     * Push a real-time offer notification to the driver, plus a status-change
+     * event to the ride room so the rider's UI reflects "matched" (offer pending).
+     * Best-effort - a driver who's offline just falls back to seeing it in their
+     * pending list next poll.
+     *
+     * @private
+     */
+    static async _notifyOffer(rideId, driver, offerExpiresAt) {
+        try {
+            const ride = await Ride.findById(rideId).select('pickup destination fare estimatedDistance');
+            if (!ride) {
+                return;
+            }
+
+            socketService.broadcastToUser(driver._id.toString(), 'ride:offer', {
+                rideId: rideId.toString(),
+                pickup: ride.pickup,
+                destination: ride.destination,
+                estimatedFare: ride.fare.estimated,
+                estimatedDistance: ride.estimatedDistance,
+                expiresAt: offerExpiresAt
+            });
+
+            socketService.broadcastToRide(rideId.toString(), 'ride:status-change', {
+                rideId: rideId.toString(),
+                status: 'matched',
+                timestamp: new Date().toISOString()
+            });
+        } catch (error) {
+            console.error('Failed to send offer notification:', error);
+        }
+    }
+
+    /**
+     * Atomically offer a ride to a driver with conflict resolution.
+     *
+     * This does NOT accept the ride on the driver's behalf - it puts the ride into
+     * 'matched' (offer-pending) state with a response deadline. The driver must call
+     * acceptOffer or declineOffer; expireStaleOffers reclaims it if they do neither.
      *
      * Uses MongoDB's findOneAndUpdate with specific conditions to ensure
-     * only available drivers can be assigned and prevents double-booking.
+     * only available drivers can be offered a ride and prevents double-booking.
      *
-     * @param {string} rideId - Ride ID to assign
-     * @param {string} driverId - Driver ID to assign to
-     * @returns {Promise<Object>} Assignment result with success status
+     * @param {string} rideId - Ride ID to offer
+     * @param {string} driverId - Driver ID to offer it to
+     * @returns {Promise<Object>} Offer result with success status
      */
-    static async assignRideToDriver(rideId, driverId) {
+    static async offerRideToDriver(rideId, driverId) {
         try {
-            // Step 1: Atomically update ride to assign driver (prevents double-booking)
+            const offerExpiresAt = new Date(Date.now() + this.DRIVER_RESPONSE_TIMEOUT);
+
+            // Step 1: Atomically move ride into the offer-pending state (prevents double-booking)
             const ride = await Ride.findOneAndUpdate(
                 {
                     _id: rideId,
                     status: 'requested',
-                    driverId: null // Ensure ride hasn't been assigned yet
+                    driverId: null // Ensure ride hasn't been offered/assigned yet
                 },
                 {
                     driverId: driverId,
-                    status: 'accepted',
+                    status: 'matched',
                     'timeline.matchedAt': new Date(),
-                    'timeline.acceptedAt': new Date()
+                    offerExpiresAt
                 },
                 {
                     new: true
@@ -197,13 +245,13 @@ class MatchingService {
                 };
             }
 
-            // Step 2: Update driver availability
+            // Step 2: Lock the driver so they can't be offered a second ride concurrently
             const driver = await User.findOneAndUpdate(
                 {
                     _id: driverId,
                     role: 'driver',
                     isActive: true,
-                    'driverInfo.isAvailable': true // Ensure driver hasn't already been claimed by a concurrent assignment
+                    'driverInfo.isAvailable': true // Ensure driver hasn't already been claimed by a concurrent offer
                 },
                 {
                     'driverInfo.isAvailable': false,
@@ -216,11 +264,12 @@ class MatchingService {
             );
 
             if (!driver) {
-                // Rollback: Release the ride if driver update fails
+                // Rollback: Release the ride if the driver lock fails
                 await Ride.findByIdAndUpdate(rideId, {
                     driverId: null,
                     status: 'requested',
-                    'timeline.matchedAt': null
+                    'timeline.matchedAt': null,
+                    offerExpiresAt: null
                 });
 
                 return {
@@ -233,18 +282,161 @@ class MatchingService {
 
             return {
                 success: true,
-                message: 'Ride assigned successfully',
-                assignedAt: new Date()
+                message: 'Ride offered successfully',
+                offerExpiresAt
             };
 
         } catch (error) {
-            console.error('Ride assignment error:', error);
+            console.error('Ride offer error:', error);
             return {
                 success: false,
                 error: 'ASSIGNMENT_ERROR',
                 message: error.message,
                 timestamp: new Date()
             };
+        }
+    }
+
+    /**
+     * Driver accepts an offered ride.
+     *
+     * @param {string} rideId - Ride ID
+     * @param {string} driverId - Driver accepting (must match the current offer)
+     * @returns {Promise<Object>} Result with success status and the updated ride
+     */
+    static async acceptOffer(rideId, driverId) {
+        try {
+            const ride = await Ride.findOneAndUpdate(
+                {
+                    _id: rideId,
+                    status: 'matched',
+                    driverId: driverId
+                },
+                {
+                    status: 'accepted',
+                    'timeline.acceptedAt': new Date(),
+                    offerExpiresAt: null
+                },
+                { new: true }
+            );
+
+            if (!ride) {
+                return {
+                    success: false,
+                    error: 'ASSIGNMENT_CONFLICT',
+                    message: 'No active offer for this driver on this ride (it may have expired or been reassigned)',
+                    timestamp: new Date()
+                };
+            }
+
+            return { success: true, ride };
+        } catch (error) {
+            console.error('Accept offer error:', error);
+            return {
+                success: false,
+                error: 'ACCEPT_ERROR',
+                message: error.message,
+                timestamp: new Date()
+            };
+        }
+    }
+
+    /**
+     * Revert an offered ride back to 'requested', record the driver as having
+     * passed on it (so re-matching skips them), release the driver, and
+     * immediately try to re-match. Shared by declineOffer and expireStaleOffers.
+     *
+     * @private
+     * @param {object} ride - The ride document (status 'matched')
+     * @returns {Promise<void>}
+     */
+    static async _revertOfferAndRematch(ride) {
+        const driverId = ride.driverId;
+
+        await Ride.findOneAndUpdate(
+            { _id: ride._id, status: 'matched' },
+            {
+                driverId: null,
+                status: 'requested',
+                'timeline.matchedAt': null,
+                offerExpiresAt: null,
+                $addToSet: { rejectedBy: driverId }
+            }
+        );
+
+        await this.releaseDriver(driverId);
+
+        const pickupCoords = ride.pickup.coordinates.coordinates;
+        const rejectedBy = [...(ride.rejectedBy || []), driverId].map(id => id.toString());
+        await this.findNearestDriver(pickupCoords[0], pickupCoords[1], ride._id.toString(), this.INITIAL_RADIUS, rejectedBy);
+    }
+
+    /**
+     * Driver declines an offered ride. Reverts the offer and re-matches to the
+     * next nearest driver, excluding this one.
+     *
+     * @param {string} rideId - Ride ID
+     * @param {string} driverId - Driver declining (must match the current offer)
+     * @returns {Promise<Object>} Result with success status
+     */
+    static async declineOffer(rideId, driverId) {
+        try {
+            const ride = await Ride.findOne({
+                _id: rideId,
+                status: 'matched',
+                driverId: driverId
+            });
+
+            if (!ride) {
+                return {
+                    success: false,
+                    error: 'ASSIGNMENT_CONFLICT',
+                    message: 'No active offer for this driver on this ride',
+                    timestamp: new Date()
+                };
+            }
+
+            await this._revertOfferAndRematch(ride);
+
+            return { success: true, message: 'Offer declined' };
+        } catch (error) {
+            console.error('Decline offer error:', error);
+            return {
+                success: false,
+                error: 'DECLINE_ERROR',
+                message: error.message,
+                timestamp: new Date()
+            };
+        }
+    }
+
+    /**
+     * Sweep for offers whose response deadline has passed and revert/re-match
+     * them. Run on an interval (see server.js) rather than a per-ride timer so
+     * offers still expire correctly across a process restart.
+     *
+     * ponytail: in-process sweeper; move to a job queue if we ever run >1 API instance
+     *
+     * @returns {Promise<number>} Number of stale offers reverted
+     */
+    static async expireStaleOffers() {
+        try {
+            const staleRides = await Ride.find({
+                status: 'matched',
+                offerExpiresAt: { $lt: new Date() }
+            });
+
+            for (const ride of staleRides) {
+                socketService.broadcastToUser(ride.driverId.toString(), 'ride:offer-expired', {
+                    rideId: ride._id.toString()
+                });
+                await this._revertOfferAndRematch(ride);
+            }
+
+            return staleRides.length;
+        } catch (error) {
+            console.error('Expire stale offers error:', error);
+            return 0;
         }
     }
 
@@ -333,13 +525,15 @@ class MatchingService {
      * @param {number} longitude - Center longitude
      * @param {number} latitude - Center latitude
      * @param {number} radius - Search radius in meters
+     * @param {string[]} excludeDriverIds - Driver IDs to exclude (e.g. already declined this ride)
      * @returns {Promise<Array>} Array of available drivers
      */
-    static async _findAvailableDriversInRadius(longitude, latitude, radius) {
+    static async _findAvailableDriversInRadius(longitude, latitude, radius, excludeDriverIds = []) {
         return await User.find({
             role: 'driver',
             isActive: true,
             'driverInfo.isAvailable': true,
+            ...(excludeDriverIds.length > 0 ? { _id: { $nin: excludeDriverIds } } : {}),
             'driverInfo.currentLocation': {
                 $near: {
                     $geometry: {

@@ -315,6 +315,18 @@ async function startServer() {
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log('🛡️  Enhanced error handling and validation enabled');
       console.log('⚡ Circuit breakers initialized for external services');
+
+      // Sweep for ride offers whose 30s response deadline passed without an
+      // accept/decline, so they revert and re-match instead of stranding the
+      // ride. Skipped in test env alongside the rest of matching (DISABLE_MATCHING).
+      if (process.env.DISABLE_MATCHING !== 'true') {
+        const { MatchingService } = require('./services');
+        setInterval(() => {
+          MatchingService.expireStaleOffers().catch(err =>
+            console.error('Failed to expire stale ride offers:', err)
+          );
+        }, 10000);
+      }
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error.message);

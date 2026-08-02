@@ -106,53 +106,14 @@ class RideController {
           );
 
           if (matchingResult.success) {
-            console.log(`✅ Driver matched for ride ${ride._id}:`, matchingResult.driver.profile.name);
-            // In a real application, you would emit Socket.IO events here
+            // MatchingService emits the ride:offer / ride:status-change socket events itself
+            // (also needed for re-matches after a decline/expiry, not just this first attempt).
+            console.log(`📨 Ride ${ride._id} offered to driver:`, matchingResult.driver.profile.name);
           } else {
             console.log(`❌ No drivers found for ride ${ride._id}:`, matchingResult.message);
-            // Update ride status to indicate no drivers available
-            try {
-              // Check DB connection again before update
-              if (mongoose.connection.readyState !== 1) {
-                return;
-              }
-
-              await Ride.findByIdAndUpdate(ride._id, {
-                $set: { 'metadata.noDriversAvailable': true },
-                $push: {
-                  'timeline.events': {
-                    type: 'NO_DRIVERS_AVAILABLE',
-                    timestamp: new Date(),
-                    message: matchingResult.message
-                  }
-                }
-              });
-            } catch (updateError) {
-              console.error('Failed to update ride with no drivers status:', updateError);
-            }
           }
         } catch (matchingError) {
           console.error('❌ Driver matching failed with error:', matchingError);
-          // Log the error and update ride status
-          try {
-            // Check DB connection before update
-            if (mongoose.connection.readyState !== 1) {
-              return;
-            }
-
-            await Ride.findByIdAndUpdate(ride._id, {
-              $set: { 'metadata.matchingError': matchingError.message },
-              $push: {
-                'timeline.events': {
-                  type: 'MATCHING_ERROR',
-                  timestamp: new Date(),
-                  error: matchingError.message
-                }
-              }
-            });
-          } catch (updateError) {
-            console.error('Failed to log matching error:', updateError);
-          }
         }
       }, 1000); // Small delay to allow response to be sent first
 
@@ -414,7 +375,7 @@ class RideController {
       const { lat, lng, radius = 10 } = req.query;
 
       // A driver whose own availability flag is off can never actually accept
-      // (assignRideToDriver requires it) - don't show rides they can't take.
+      // (offerRideToDriver requires it) - don't show rides they can't take.
       if (!req.user.driverInfo?.isAvailable) {
         return res.json({
           success: true,
@@ -503,16 +464,27 @@ class RideController {
       const { id } = req.params;
       const driverId = req.user._id;
 
-      // Use MatchingService for atomic assignment with conflict resolution
-      const assignmentResult = await MatchingService.assignRideToDriver(id, driverId);
+      // Two ways a driver can end up here:
+      //  1. They were offered this ride (status 'matched', driverId already theirs) - accept it.
+      //  2. They're claiming an unoffered ride off the pending list (status 'requested',
+      //     driverId null) - place the offer and immediately accept it in one step, since
+      //     the driver has already chosen this ride rather than waiting to be offered it.
+      let acceptResult = await MatchingService.acceptOffer(id, driverId);
 
-      if (!assignmentResult.success) {
-        const statusCode = assignmentResult.error === 'ASSIGNMENT_CONFLICT' ? 409 : 400;
+      if (!acceptResult.success) {
+        const offerResult = await MatchingService.offerRideToDriver(id, driverId);
+        if (offerResult.success) {
+          acceptResult = await MatchingService.acceptOffer(id, driverId);
+        }
+      }
+
+      if (!acceptResult.success) {
+        const statusCode = acceptResult.error === 'ASSIGNMENT_CONFLICT' ? 409 : 400;
         return res.status(statusCode).json({
           success: false,
           error: {
-            code: assignmentResult.error,
-            message: assignmentResult.message,
+            code: acceptResult.error,
+            message: acceptResult.message,
             timestamp: new Date().toISOString()
           }
         });
@@ -545,8 +517,7 @@ class RideController {
         success: true,
         data: {
           ride,
-          message: 'Ride accepted successfully',
-          assignedAt: assignmentResult.assignedAt
+          message: 'Ride accepted successfully'
         },
         timestamp: new Date().toISOString()
       });
@@ -558,6 +529,49 @@ class RideController {
         error: {
           code: 'RIDE_ACCEPT_FAILED',
           message: 'Failed to accept ride',
+          details: error.message,
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+  }
+
+  /**
+   * Decline an offered ride
+   * POST /api/rides/:id/decline
+   */
+  static async declineRide(req, res) {
+    try {
+      const { id } = req.params;
+      const driverId = req.user._id;
+
+      const declineResult = await MatchingService.declineOffer(id, driverId);
+
+      if (!declineResult.success) {
+        const statusCode = declineResult.error === 'ASSIGNMENT_CONFLICT' ? 409 : 400;
+        return res.status(statusCode).json({
+          success: false,
+          error: {
+            code: declineResult.error,
+            message: declineResult.message,
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
+
+      res.json({
+        success: true,
+        data: { message: 'Ride declined' },
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('Decline ride error:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'RIDE_DECLINE_FAILED',
+          message: 'Failed to decline ride',
           details: error.message,
           timestamp: new Date().toISOString()
         }

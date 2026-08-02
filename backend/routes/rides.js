@@ -123,6 +123,18 @@ router.post('/:id/accept',
 );
 
 /**
+ * @route   POST /api/rides/:id/decline
+ * @desc    Decline an offered ride
+ * @access  Private (Driver only)
+ */
+router.post('/:id/decline',
+  requireAuth,
+  requireDriver,
+  validateMongoIdParam,
+  asyncHandler(RideController.declineRide)
+);
+
+/**
  * @route   POST /api/rides/:id/find-driver
  * @desc    Find and assign nearest driver to a ride
  * @access  Private (Admin only, or system use)

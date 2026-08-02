@@ -1759,3 +1759,42 @@
 - **Tradeoffs / risks:** Riders must use the map, address search, or the manual "Use My Location" button;
   there is no zero-click default. This is judged acceptable since the Book button is already disabled
   until `pickup` is set, so there is no silent failure mode — only a required extra step.
+
+## D-018 — Sequential ride offers with a 30s response window, instead of auto-assignment
+- **Date / Layer:** 2026-08-03 / P-023 Phase 2
+- **Context:** Phase 1 (P-023) fixed matching's ability to find drivers, but left the actual assignment
+  behavior untouched: `MatchingService.assignRideToDriver` moved a ride straight from `requested` to
+  `accepted` in one atomic step the instant a nearby driver was found, with no consent step. The `'matched'`
+  status already existed in the `Ride` schema enum and the rider UI already rendered it as "Finding a driver
+  for your ride…", but nothing had ever written it — the acceptance step was designed into the schema and
+  never wired up.
+- **Decision:** Nearest-driver-first sequential offers. The nearest available driver is offered the ride
+  (`status: 'matched'`, `offerExpiresAt` = now + 30s) rather than assigned it. The driver must explicitly
+  `POST /rides/:id/accept` or the new `POST /rides/:id/decline`. A decline, or a 30s timeout caught by an
+  in-process sweeper (`MatchingService.expireStaleOffers`, polled every 10s from `server.js`), reverts the
+  ride to `requested`, records the driver in a new `rejectedBy` array, releases their availability lock, and
+  immediately re-matches to the next-nearest driver excluding everyone in `rejectedBy`. Real-time
+  `ride:offer` / `ride:offer-expired` socket events push the offer to the driver as it happens; a driver
+  who's offline still sees it via the existing pending-list polling as a fallback.
+- **Why:** Sequential offers reuse the existing atomic `findOneAndUpdate`-guarded assignment structure
+  (`{status:'requested', driverId:null}` guard, driver-availability lock, rollback-on-conflict) almost
+  unchanged — only the written fields differ (`matched` instead of `accepted`, no `acceptedAt` yet). That
+  made it the smallest correct change, and it matches how the rider UI already described the state
+  ("Finding a driver…" already implied someone hadn't said yes yet). An in-process `setInterval` sweeper
+  (not a per-ride `setTimeout`) was chosen so offers still expire correctly across a Render restart, at the
+  cost of being unsafe if the API is ever scaled to >1 instance without also moving this to a real job queue
+  or distributed lock (documented inline with a `ponytail:` comment naming that ceiling).
+- **Alternatives considered:** Broadcast-to-all-drivers-first-to-accept-wins — rejected for this pass; it
+  needs a new offer-fanout state and per-driver dismissal tracking, a meaningfully bigger diff, for a UX
+  gain (faster fill under high driver density) that doesn't matter yet at this project's scale. Can be
+  revisited later without another schema migration, since `rejectedBy`/`offerExpiresAt` would still apply.
+  A per-ride `setTimeout` instead of a sweeper — rejected because it doesn't survive a process restart,
+  which matters on Render's free tier where the dyno can spin down/restart.
+- **Tradeoffs / risks:** A ride can take up to 30s × (number of drivers who decline/ignore it) to find someone
+  who accepts, versus the old (broken) instant-assign. The sweeper polls every 10s, so an expiry can be
+  detected up to 10s late — acceptable at this project's scale, called out as the tunable if it ever matters.
+  `ActiveRideSection.tsx`'s dead `case 'matched'` branch (driver's *active*-ride view) was left as-is rather
+  than cleaned up: `getActiveRide` only ever queries `status: {$in: ['accepted','in_progress']}`, so that
+  branch has never been and still isn't reachable — removing genuinely-dead code here was judged not worth
+  the diff for a change already touching many files.
+- **Supersedes:** The `assignRideToDriver` auto-accept behavior described (but not fixed) in P-023.

@@ -266,6 +266,27 @@ class RideService {
   }
 
   /**
+   * Decline an offered ride
+   */
+  async declineRide(rideId: string): Promise<void> {
+    try {
+      const response = await apiClient.post<ApiResponse<{ message: string }>>(`/rides/${rideId}/decline`);
+
+      if (!response.data.success) {
+        throw new Error(response.data.error?.message || 'Failed to decline ride');
+      }
+    } catch (error: any) {
+      console.error('Decline ride error:', error);
+
+      if (error.code === 'ASSIGNMENT_CONFLICT') {
+        throw new Error('This offer is no longer active - it may have already expired.');
+      }
+
+      throw new Error(error.message || 'Failed to decline ride');
+    }
+  }
+
+  /**
    * Update ride status
    */
   async updateRideStatus(rideId: string, status: Ride['status']): Promise<Ride> {

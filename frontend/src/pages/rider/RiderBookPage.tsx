@@ -803,14 +803,14 @@ const RiderBookPage: React.FC = () => {
                       Cancel Ride
                     </button>
                   </>
-                ) : currentRide.status === 'matched' && !assignedDriver ? (
+                ) : currentRide.status === 'matched' ? (
                   <>
                     <p>🔍 Finding a driver for your ride...</p>
                     <button onClick={cancelRide} className="cancel-btn">
                       Cancel Ride
                     </button>
                   </>
-                ) : (currentRide.status === 'matched' && assignedDriver) || currentRide.status === 'accepted' ? (
+                ) : currentRide.status === 'accepted' ? (
                   <>
                     <p>🚗 Driver is on the way!</p>
                     <button onClick={cancelRide} className="cancel-btn">
