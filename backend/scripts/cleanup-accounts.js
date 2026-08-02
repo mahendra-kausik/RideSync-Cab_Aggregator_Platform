@@ -1,7 +1,9 @@
 /**
  * One-off cleanup: delete every account except admin and the two demo
  * accounts (rider/driver from seed.js's demoUsers), plus any rides that
- * reference a deleted account. Dry-run by default - pass --apply to write.
+ * reference a deleted account, plus every completed ride (including the
+ * demo accounts' own) so the demo dataset always starts ride-history-free.
+ * Dry-run by default - pass --apply to write.
  *
  * Usage:
  *   node backend/scripts/cleanup-accounts.js            (dry run, prints what would be removed)
@@ -56,10 +58,32 @@ async function cleanupAccounts() {
   console.log(`🗑️  Removed ${userResult.deletedCount} account(s)`);
 }
 
+async function cleanupCompletedRides() {
+  // Runs regardless of which accounts still exist - includes the demo
+  // accounts' own completed rides, not just deleted-account rides.
+  const count = await Ride.countDocuments({ status: 'completed' });
+
+  if (count === 0) {
+    console.log('✅ No completed rides to clean up.');
+    return;
+  }
+
+  console.log(`${APPLY ? '🗑️  Deleting' : '🔍 Would delete'} ${count} completed ride(s)`);
+
+  if (!APPLY) {
+    console.log('Dry run only. Re-run with --apply to actually delete.');
+    return;
+  }
+
+  const result = await Ride.deleteMany({ status: 'completed' });
+  console.log(`🗑️  Removed ${result.deletedCount} completed ride(s)`);
+}
+
 async function run() {
   try {
     await dbConnection.connect();
     await cleanupAccounts();
+    await cleanupCompletedRides();
   } catch (error) {
     console.error('❌ Account cleanup failed:', error.message);
     process.exit(1);
