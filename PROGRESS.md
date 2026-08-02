@@ -402,9 +402,10 @@ P-007-style "looks wired up, silently isn't" bugs:
   fix works (distinct client IPs, IP+account lockout genuinely IP-scoped in production).
 - ~~Stray Atlas account (phone `4444444444`)~~ — **resolved**: deleted from Atlas by the user. Live `users`
   collection is back to admin/rider/driver only.
-- **Run `node backend/scripts/cleanup-accounts.js --apply`** against Atlas to remove the test accounts
-  accumulated while P-017 was live (deletes everything except admin + demo rider/driver, and their rides).
-  Dry-run first (no flag) to review the list.
+- ~~Run `node backend/scripts/cleanup-accounts.js --apply` against Atlas~~ — **resolved**: run successfully
+  by the user; test accounts accumulated while P-017 was live have been removed from the live Atlas
+  database. The script was since extended to also delete every completed ride (commit `8b29b37`, not
+  separately logged with a P-number), so this run also cleared all ride history.
 
 ## How to resume
 1. Read this file, then `CLAUDE.md`. P-006 is closed — no action needed there. The post-Layer-4 hardening
