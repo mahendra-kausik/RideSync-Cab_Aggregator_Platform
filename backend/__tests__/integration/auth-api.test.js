@@ -163,6 +163,35 @@ describe('Authentication API (Integration)', () => {
             expect(afterTheft.status).toBe(401);
         });
 
+        it('rejects refresh for a suspended account and kills its session', async () => {
+            const user = await global.testUtils.createTestUser({
+                phone: '5550000014',
+                password: 'Suspend!1',
+                role: 'rider',
+                profile: { name: 'Suspend Rider' }
+            });
+            const login = await request(app).post('/api/auth/login-phone').send({ phone: '5550000014', password: 'Suspend!1' });
+            const { accessToken, refreshToken } = login.body.data.tokens;
+
+            const { User } = require('../../models');
+            await User.findByIdAndUpdate(user._id, { isActive: false });
+
+            const res = await request(app).post('/api/auth/refresh').send({ refreshToken });
+            expect(res.status).toBe(401);
+
+            // The session is dead, so even the still-unexpired access token
+            // stops working immediately rather than lingering until it expires.
+            const replay = await request(app).get('/api/auth/verify').set('Authorization', `Bearer ${accessToken}`);
+            expect(replay.status).toBe(401);
+
+            // Confirm the session was actually killed, not just gated by the
+            // isActive check re-running: even a reactivated account can't
+            // resurrect the old refresh token, because it's now blacklisted.
+            await User.findByIdAndUpdate(user._id, { isActive: true });
+            const afterReactivation = await request(app).post('/api/auth/refresh').send({ refreshToken });
+            expect(afterReactivation.status).toBe(401);
+        });
+
         it('rejects an access token presented as a refresh token', async () => {
             await global.testUtils.createTestUser({
                 phone: '5550000013',

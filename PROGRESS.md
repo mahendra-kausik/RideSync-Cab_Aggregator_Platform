@@ -470,6 +470,10 @@ P-007-style "looks wired up, silently isn't" bugs:
   database. The script was since extended to also delete every completed ride (commit `8b29b37`, not
   separately logged with a P-number), so this run also cleared all ride history.
 
+**Auth token lifecycle hardened further (P-026):** `refreshSession()` now checks `user.isActive` and kills
+the session if the account was suspended by an admin mid-session, instead of silently minting a now-useless
+token pair. Backend **203/203**.
+
 **Auth token lifecycle fixed (D-020, P-025)** — user reported three linked bugs: stolen access tokens
 survived logout, the refresh token was issued but never used, and auto-login kept forcing manual re-login.
 Root cause was a half-built auth system: `sessionManager.invalidateSession()`/blacklist already existed but

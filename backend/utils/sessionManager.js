@@ -214,6 +214,15 @@ class SessionManager {
         throw new Error('User not found');
       }
 
+      if (!user.isActive) {
+        // A suspended account shouldn't be able to mint a fresh access token
+        // even though authenticateToken's own isActive check would reject any
+        // request made with it — kill the session outright instead of leaving
+        // a live-but-useless token pair lying around.
+        await this.invalidateSession(decoded.sessionId);
+        throw new Error('Account has been suspended');
+      }
+
       const newSession = await this.rotateSession(decoded.sessionId, user);
 
       return {

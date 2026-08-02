@@ -1948,3 +1948,22 @@
   unbounded growth risk (still bounded by TTL) and no behavior change for the primary Redis-backed deployment.
 - **Tradeoffs / risks (if applicable):** None material — same memory profile as before (still self-pruning),
   just correct instead of a "works until it doesn't" cliff.
+
+## P-026 — Refresh endpoint could mint a new token pair for a suspended account
+- **Date / Layer:** 2026-08-03 / Auth hardening follow-up (found while confirming admin-suspend behavior)
+- **Context:** Confirming that admin-suspend (`userController.suspendUser`, sets `user.isActive = false`)
+  interacts correctly with D-020's new refresh flow. It does, for requests: `authenticateToken` re-fetches
+  the user from Mongo and checks `isActive` on every request, so a suspended user's existing access token
+  stops working on its very next use regardless of session state. But `sessionManager.refreshSession()`
+  fetched the user for the token payload without checking `isActive`, so a suspended user could still
+  successfully exchange their refresh token for a fresh access+refresh pair — functionally harmless (the new
+  access token would immediately fail the same per-request `isActive` check) but inconsistent: refresh
+  silently "succeeded" into a dead-end token instead of failing cleanly, and the session stayed alive
+  server-side instead of being torn down at the moment of suspension.
+- **Action:** `refreshSession()` now checks `user.isActive` and calls `invalidateSession()` (same as the
+  reuse-detection and session-expired paths) if the account is suspended, killing the session outright.
+- **Why:** Consistent, honest failure at the point of suspension rather than a no-op success followed by a
+  guaranteed-to-fail request. Also means a suspended user's session is torn down immediately rather than
+  lingering (blacklisted-but-technically-still-a-live-record) until it would otherwise expire.
+- **Tradeoffs / risks (if applicable):** None — no prior behavior depended on refresh succeeding for a
+  suspended account (nothing could be usefully done with the resulting token).
