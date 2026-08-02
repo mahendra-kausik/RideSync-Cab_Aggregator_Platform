@@ -470,12 +470,27 @@ P-007-style "looks wired up, silently isn't" bugs:
   database. The script was since extended to also delete every completed ride (commit `8b29b37`, not
   separately logged with a P-number), so this run also cleared all ride history.
 
+**Auth token lifecycle fixed (D-020, P-025)** — user reported three linked bugs: stolen access tokens
+survived logout, the refresh token was issued but never used, and auto-login kept forcing manual re-login.
+Root cause was a half-built auth system: `sessionManager.invalidateSession()`/blacklist already existed but
+no `logout` route ever called it; rotation happened via `X-New-Access-Token` response headers instead of a
+real refresh endpoint. Shipped: `POST /api/auth/logout` (revokes session immediately), `POST /api/auth/refresh`
+(rotation with reuse-detection — a replayed old refresh token kills the whole session), access tokens now
+15 minutes (was 24h), frontend `apiClient` does single-flight refresh + replay on 401, `AuthContext` no longer
+wipes the token on a network/5xx hiccup during boot (root cause of the auto-login flakiness). Also fixed
+P-025: the in-memory (no-Redis) token blacklist used to wholesale-`.clear()` past 10k entries, silently
+un-revoking everything — now prunes only expired entries. Removed the now-dead `tokenRotationMiddleware`
+and its header-push path. Backend **202/202** (6 new tests: logout revocation, refresh rotation, reuse
+detection, wrong-token-type rejection, blacklist TTL pruning), frontend type-check clean, **59/59** tests,
+both lints clean. Not yet committed/pushed or re-verified against the live deploy.
+
 ## How to resume
 1. Read this file, then `CLAUDE.md`. All 6 layers are shipped, including **Layer 5 — README-as-paper**
    (see the Layer checklist above — this was previously mis-stated as pending in this section; it shipped
-   as commit `e95217a`). P-023 (both phases), P-024, and D-019 are shipped. Current verified baseline:
-   backend **196/196**, frontend type-check clean, **59/59** — not yet re-checked in CI, and the live
-   deploy has not been re-verified against these changes.
+   as commit `e95217a`). P-023 (both phases), P-024, D-019, D-020, and P-025 are shipped. Current verified
+   baseline: backend **202/202**, frontend type-check clean, **59/59** — not yet re-checked in CI, and the
+   live deploy has not been re-verified against these changes (in particular: the live Render/Vercel deploy
+   is still running the old 24h-access-token / header-rotation auth path until this is pushed and deployed).
 2. No queued layer or open plan to act on. If resuming after a long gap, sanity-check the live deploy
    (`/health`, a demo login, an actual two-browser ride-offer test with distance/fare comparison) before
    assuming anything above is still true — free-tier hosts and long idle periods are the likeliest sources

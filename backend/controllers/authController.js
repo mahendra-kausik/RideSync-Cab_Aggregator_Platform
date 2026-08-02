@@ -844,6 +844,98 @@ module.exports = {
   forgotPassword,
   getDevOTP,
   /**
+   * Revoke the current session server-side (blacklists both tokens).
+   * Idempotent: an already-gone session still reports success.
+   * POST /api/auth/logout
+   */
+  logout: async (req, res) => {
+    try {
+      await sessionManager.invalidateSession(req.sessionId);
+
+      await securityLogger.logAuthEvent('LOGOUT', {
+        userId: req.user?._id,
+        sessionId: req.sessionId,
+        ip: req.ip
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: 'Logged out successfully',
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'LOGOUT_FAILED',
+          message: 'Failed to log out',
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+  },
+  /**
+   * Exchange a refresh token for a new access+refresh pair.
+   * POST /api/auth/refresh
+   */
+  refresh: async (req, res) => {
+    try {
+      const { refreshToken } = req.body;
+      if (!refreshToken) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'refreshToken is required',
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
+
+      const result = await sessionManager.refreshSession(refreshToken);
+
+      if (!result.valid) {
+        await securityLogger.logAuthEvent('REFRESH_FAILED', {
+          error: result.error,
+          ip: req.ip,
+          userAgent: req.get('User-Agent')
+        });
+
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'REFRESH_FAILED',
+            message: 'Invalid or expired refresh token',
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          tokens: {
+            accessToken: result.accessToken,
+            refreshToken: result.refreshToken,
+            expiresIn: result.expiresIn
+          }
+        },
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Refresh error:', error);
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'REFRESH_FAILED',
+          message: 'Failed to refresh token',
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+  },
+  /**
    * Verify current access token and return user profile
    * GET /api/auth/verify
    */

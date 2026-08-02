@@ -1,7 +1,6 @@
 const helmet = require('helmet');
 const { AppError } = require('./errorHandler');
 const securityConfig = require('../config/security');
-const sessionManager = require('../utils/sessionManager');
 const securityLogger = require('../utils/securityLogger');
 
 /**
@@ -196,38 +195,6 @@ const advancedInputValidation = (req, res, next) => {
 };
 
 /**
- * Token rotation middleware for enhanced session security
- */
-const tokenRotationMiddleware = async (req, res, next) => {
-  if (req.user && req.headers.authorization) {
-    const token = req.headers.authorization.replace('Bearer ', '');
-
-    try {
-      const validation = await sessionManager.validateSession(token);
-
-      if (validation.needsRotation && validation.newTokens) {
-        // Set new tokens in response headers
-        res.set({
-          'X-New-Access-Token': validation.newTokens.accessToken,
-          'X-New-Refresh-Token': validation.newTokens.refreshToken,
-          'X-Token-Rotated': 'true'
-        });
-
-        securityLogger.logSecurityEvent('TOKEN_ROTATED', {
-          userId: req.user.userId,
-          sessionId: validation.sessionId,
-          ip: req.ip
-        });
-      }
-    } catch (error) {
-      console.warn('Token rotation check failed:', error.message);
-    }
-  }
-
-  next();
-};
-
-/**
  * API abuse detection
  */
 const apiAbuseDetection = (req, res, next) => {
@@ -381,7 +348,6 @@ module.exports = {
   strictCSP,
   comprehensiveSecurityHeaders,
   advancedInputValidation,
-  tokenRotationMiddleware,
   apiAbuseDetection,
   secureFileUpload,
   geographicAccessControl

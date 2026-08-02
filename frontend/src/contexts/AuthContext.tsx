@@ -101,23 +101,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return;
     }
 
-    try {
-      const response = await authService.verifyToken(token);
-      if (response.success && response.data) {
+    const response = await authService.verifyToken(token);
+    if (response.success && response.data) {
+      localStorage.setItem('user', JSON.stringify(response.data.user));
+      dispatch({
+        type: 'AUTH_SUCCESS',
+        payload: {
+          user: response.data.user,
+          token: token,
+        },
+      });
+    } else if (response.indeterminate) {
+      // Network error or backend hiccup — we don't actually know the token is
+      // bad. Restore optimistically from the last-known user profile and let
+      // the user through; a real API call will 401 and trigger a refresh if
+      // the token is genuinely dead.
+      const cachedUser = localStorage.getItem('user');
+      if (cachedUser) {
         dispatch({
           type: 'AUTH_SUCCESS',
-          payload: {
-            user: response.data.user,
-            token: token,
-          },
+          payload: { user: JSON.parse(cachedUser), token },
         });
       } else {
-        localStorage.removeItem('token');
-        dispatch({ type: 'AUTH_FAILURE', payload: 'Invalid token' });
+        dispatch({ type: 'SET_LOADING', payload: false });
       }
-    } catch (error) {
+    } else {
       localStorage.removeItem('token');
-      dispatch({ type: 'AUTH_FAILURE', payload: 'Token verification failed' });
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('user');
+      dispatch({ type: 'AUTH_FAILURE', payload: 'Invalid token' });
     }
   };
 
@@ -129,8 +141,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const response = await authService.login(credentials);
 
       if (response.success && response.data) {
-        const { user, token } = response.data;
+        const { user, token, refreshToken } = response.data;
         localStorage.setItem('token', token);
+        localStorage.setItem('refreshToken', refreshToken);
+        localStorage.setItem('user', JSON.stringify(user));
         dispatch({
           type: 'AUTH_SUCCESS',
           payload: { user, token },
@@ -192,8 +206,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const response = await authService.verifyOTP(phone, otp, password);
 
       if (response.success && response.data) {
-        const { user, token } = response.data;
+        const { user, token, refreshToken } = response.data;
         localStorage.setItem('token', token);
+        localStorage.setItem('refreshToken', refreshToken);
+        localStorage.setItem('user', JSON.stringify(user));
         dispatch({
           type: 'AUTH_SUCCESS',
           payload: { user, token },
@@ -217,9 +233,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Logout function
+  // Logout function — revokes the session server-side (best-effort), then
+  // always clears local state regardless of whether the network call succeeded.
   const logout = () => {
+    authService.logout().catch(() => {
+      // Ignore — e.g. offline. Local tokens are cleared below either way.
+    });
     localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
+    localStorage.removeItem('currentRideId');
     dispatch({ type: 'LOGOUT' });
   };
 
@@ -243,6 +266,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
     window.addEventListener('auth:token-rotated', handleTokenRotated);
     return () => window.removeEventListener('auth:token-rotated', handleTokenRotated);
+  }, []);
+
+  // apiClient dispatches this when a 401's refresh attempt itself fails
+  // (refresh token dead/reused) — treat it as a real logout.
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('user');
+      dispatch({ type: 'LOGOUT' });
+    };
+    window.addEventListener('auth:session-expired', handleSessionExpired);
+    return () => window.removeEventListener('auth:session-expired', handleSessionExpired);
   }, []);
 
   const value: AuthContextType = {

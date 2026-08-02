@@ -5,6 +5,7 @@ interface ExtendedAxiosRequestConfig extends InternalAxiosRequestConfig {
   metadata?: {
     retryCount: number;
   };
+  _retry?: boolean;
 }
 
 // Enhanced error types
@@ -64,21 +65,43 @@ apiClient.interceptors.request.use(
   }
 );
 
+// Single-flight refresh: every 401 that arrives while a refresh is already in
+// flight awaits the same promise instead of firing its own refresh request.
+// ponytail: dedupes within one tab only — two tabs refreshing at once can
+// still race and trip the backend's reuse detection, logging the user out.
+// Upgrade path if that bites: a BroadcastChannel lock across tabs.
+let refreshPromise: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      const storedRefreshToken = localStorage.getItem('refreshToken');
+      if (!storedRefreshToken) {
+        return null;
+      }
+      // Lazy import avoids a circular dependency (authService imports apiClient).
+      const { authService } = await import('./authService');
+      const result = await authService.refresh(storedRefreshToken);
+      if (!result.success || !result.data) {
+        return null;
+      }
+      localStorage.setItem('token', result.data.token);
+      localStorage.setItem('refreshToken', result.data.refreshToken);
+      window.dispatchEvent(new CustomEvent('auth:token-rotated', { detail: { token: result.data.token } }));
+      return result.data.token;
+    })().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
 // Response interceptor for error handling and retries
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
     // Log successful requests in development
     if (import.meta.env.DEV) {
       console.log(`✅ ${response.config.method?.toUpperCase()} ${response.config.url} - ${response.status}`);
-    }
-
-    // Backend silently rotates tokens once they cross its rotation threshold and
-    // blacklists the old one — if we don't pick up the new token here, the very
-    // next request gets rejected as invalidated, forcing an unwanted logout.
-    const newAccessToken = response.headers['x-new-access-token'];
-    if (newAccessToken) {
-      localStorage.setItem('token', newAccessToken);
-      window.dispatchEvent(new CustomEvent('auth:token-rotated', { detail: { token: newAccessToken } }));
     }
 
     return response;
@@ -93,10 +116,22 @@ apiClient.interceptors.response.use(
     // Log error details
     console.error(`🚨 API Error: ${originalRequest?.method?.toUpperCase()} ${originalRequest?.url} - ${statusCode}`);
 
-    // Handle specific error cases
-    if (statusCode === 401) {
-      // Unauthorized - do not auto-logout/redirect; let callers handle gracefully
-      console.warn('⚠️  Received 401 Unauthorized. Preserving session to avoid disruptive logouts.');
+    // Handle 401: attempt one silent refresh + replay of the original request.
+    if (statusCode === 401 && originalRequest && !originalRequest._retry
+      && !originalRequest.url?.includes('/auth/refresh') && !originalRequest.url?.includes('/auth/login')) {
+      originalRequest._retry = true;
+
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        originalRequest.headers = originalRequest.headers || {};
+        originalRequest.headers.Authorization = `Bearer ${newToken}`;
+        return apiClient(originalRequest);
+      }
+
+      // Refresh itself failed — the session is genuinely dead.
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      window.dispatchEvent(new CustomEvent('auth:session-expired'));
       return Promise.reject(createApiError(error));
     }
 

@@ -79,7 +79,6 @@ const {
   strictCSP,
   comprehensiveSecurityHeaders,
   advancedInputValidation,
-  tokenRotationMiddleware,
   apiAbuseDetection
 } = require('./middleware/advancedSecurity');
 
@@ -135,9 +134,6 @@ app.use('/api', apiAbuseDetection);
 
 // Security audit logging
 app.use(securityAuditLogger);
-
-// Token rotation middleware (after auth middleware)
-app.use(tokenRotationMiddleware);
 
 // Request logging middleware
 app.use(requestLogger);

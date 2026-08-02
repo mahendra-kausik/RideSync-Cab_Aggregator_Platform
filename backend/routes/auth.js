@@ -85,4 +85,22 @@ router.get('/dev/otp/:phone', asyncHandler(authController.getDevOTP));
  */
 router.get('/verify', requireAuth, asyncHandler(authController.verifyToken));
 
+/**
+ * @route   POST /api/auth/logout
+ * @desc    Revoke the current session (blacklists access + refresh tokens)
+ * @access  Private (Bearer token)
+ */
+router.post('/logout', requireAuth, asyncHandler(authController.logout));
+
+/**
+ * @route   POST /api/auth/refresh
+ * @desc    Exchange a refresh token for a new access+refresh pair
+ * @access  Public (refresh token in body; access token is expired by definition)
+ * @rateLimit 5 requests per 15 minutes per IP
+ */
+router.post('/refresh',
+  strictAuthRateLimiter,
+  asyncHandler(authController.refresh)
+);
+
 module.exports = router;

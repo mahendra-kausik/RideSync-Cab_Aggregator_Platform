@@ -17,6 +17,8 @@ vi.mock('@/services/authService', () => ({
         login: vi.fn(),
         verifyToken: vi.fn(),
         forgotPassword: vi.fn(),
+        logout: vi.fn().mockResolvedValue({ success: true }),
+        refresh: vi.fn(),
     },
 }));
 
@@ -72,6 +74,7 @@ describe('System Tests - Rider Registration and Booking Journey', () => {
             data: {
                 user: mockUser,
                 token: 'test-token-123',
+                refreshToken: 'test-refresh-token-123',
             },
         });
 
@@ -112,6 +115,7 @@ describe('System Tests - Rider Registration and Booking Journey', () => {
             data: {
                 user: mockUser,
                 token: 'login-token-456',
+                refreshToken: 'login-refresh-token-456',
             },
         });
 
@@ -202,6 +206,7 @@ describe('System Tests - Driver Workflow', () => {
             data: {
                 user: mockDriverUser,
                 token: 'driver-token-123',
+                refreshToken: 'driver-refresh-token-123',
             },
         });
 
@@ -253,6 +258,7 @@ describe('System Tests - Driver Workflow', () => {
             data: {
                 user: mockDriver,
                 token: 'driver-login-token',
+                refreshToken: 'driver-login-refresh-token',
             },
         });
 
@@ -303,6 +309,7 @@ describe('System Tests - Admin Workflow', () => {
             data: {
                 user: mockAdmin,
                 token: 'admin-token-123',
+                refreshToken: 'admin-refresh-token-123',
             },
         });
 

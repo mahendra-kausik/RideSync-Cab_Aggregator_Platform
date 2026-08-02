@@ -65,11 +65,6 @@ const authenticateToken = async (req, res, next) => {
         }
       };
 
-      // Include new tokens if rotation occurred
-      if (sessionResult.newTokens) {
-        response.newTokens = sessionResult.newTokens;
-      }
-
       return res.status(401).json(response);
     }
 
@@ -114,12 +109,6 @@ const authenticateToken = async (req, res, next) => {
     req.user = user;
     req.tokenData = sessionResult.user;
     req.sessionId = sessionResult.sessionId;
-
-    // Add new tokens to response headers if rotation occurred
-    if (sessionResult.newTokens) {
-      res.set('X-New-Access-Token', sessionResult.newTokens.accessToken);
-      res.set('X-New-Refresh-Token', sessionResult.newTokens.refreshToken);
-    }
 
     next();
   } catch (error) {

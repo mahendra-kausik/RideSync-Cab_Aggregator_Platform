@@ -16,6 +16,8 @@ vi.mock('@/services/authService', () => ({
         verifyOTP: vi.fn(),
         login: vi.fn(),
         verifyToken: vi.fn(),
+        logout: vi.fn().mockResolvedValue({ success: true }),
+        refresh: vi.fn(),
     },
 }));
 
@@ -106,6 +108,7 @@ describe('Authentication Flow - Integration Tests', () => {
             data: {
                 user: mockUser,
                 token: 'mock-token-123',
+                refreshToken: 'mock-refresh-token-123',
             },
         };
 

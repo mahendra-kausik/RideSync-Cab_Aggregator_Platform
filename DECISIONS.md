@@ -1898,3 +1898,53 @@
   instead of a Haversine one). Also supersedes P-013/P-014's fallback-fetch pattern going forward: those
   fixes remain correct historical record of what shipped at the time, but the pattern they established is
   no longer how new distance/duration display code should be written in this codebase.
+
+## D-020 — Real refresh-token flow with rotation + reuse detection, replacing header-push rotation
+- **Date / Layer:** 2026-08-03 / Auth hardening (user-reported)
+- **Context:** User asked three linked questions: (1) after logout, could an attacker who stole the access
+  token still use it? (2) the refresh token never seemed to be used to mint new ones; (3) why does auto-login
+  keep failing, forcing manual re-entry. Investigation found the auth system was half-built:
+  `sessionManager.invalidateSession()` and the blacklist/session-store machinery already existed, but no
+  user-facing `logout` route ever called it; the refresh token was issued at login and silently discarded by
+  the frontend since no backend endpoint accepted it; rotation instead happened as a side effect inside
+  `validateSession`, pushed to the client via `X-New-Access-Token`/`X-New-Refresh-Token` response headers.
+  A stolen access token therefore stayed valid for its full 24h regardless of logout, and an active attacker
+  got handed a fresh 24h pair every 12h forever.
+- **Decision:** Standard OAuth-style flow: access tokens now expire in 15 minutes (`ACCESS_TOKEN_EXPIRES_IN`
+  in `backend/config/security.js`); refresh tokens (7d) are persisted client-side and exchanged via a new
+  `POST /api/auth/refresh`; a new `POST /api/auth/logout` calls the existing `invalidateSession()`. Refresh
+  reuse (a refresh token presented after it's already been rotated away) kills the whole session via
+  `sessionManager.refreshSession()`, not just a denied request. The frontend's `apiClient` 401 interceptor
+  does a single-flight refresh + replay of the failed request; `AuthContext.checkAuthStatus` no longer treats
+  network/5xx failures the same as a definitive 401 (root cause of the auto-login flakiness).
+- **Why:** Closes the stolen-token-survives-logout gap directly (per-request blacklist check already existed
+  and needed no change — logout takes effect on the very next request). Short access-token life bounds
+  exposure to 15 minutes instead of 24 hours even if a user never logs out. Reuse-detection-kills-session is
+  the standard mitigation for a leaked refresh token being replayed alongside the legitimate rotated one.
+- **Alternatives considered:** Deleting the unused refresh token entirely and keeping the 24h access token —
+  rejected by the user; leaves a stolen token dangerous for a full day with logout as the only mitigation.
+  Stateless access tokens (skip the per-request session/blacklist lookup) — rejected; logout would then only
+  take effect once the (15m) token expired, not immediately, which was the explicit point of the fix.
+  Reuse policy of "just reject the request" without killing the session — rejected; leaves a stolen refresh
+  token usable indefinitely alongside the legitimate one.
+- **Tradeoffs / risks:** Two tabs refreshing concurrently can race and trip reuse detection, logging the user
+  out (`ponytail:` comment left in `apiClient.ts` at the single-flight promise — dedupes within one tab only;
+  upgrade path is a cross-tab `BroadcastChannel` lock if this proves to matter). `validateSession` still hits
+  Redis + Mongo per request (unchanged, user chose to keep this for immediate revocation over statelessness).
+- **Supersedes:** none directly, but retires the `tokenRotationMiddleware` (`middleware/advancedSecurity.js`)
+  and the `X-New-*` header rotation path introduced when session management was first built (Layer 2, D-002).
+
+## P-025 — In-memory token blacklist silently un-revoked everything past 10k entries
+- **Date / Layer:** 2026-08-03 / Auth hardening (found while implementing D-020)
+- **Context:** `sessionManager.cleanup()`'s in-memory fallback (used whenever `REDIS_URL` is unset — local dev
+  and any deploy without Redis configured) called `this.blacklistedTokens.clear()` once the Set passed 10,000
+  entries. That wipes every currently-revoked token, not just stale ones — a user's logout-revoked token (or
+  any admin-invalidated session) would become valid again the moment the fallback blacklist crossed that size.
+  Would have silently defeated the D-020 logout fix in any environment running without Redis.
+- **Action:** Changed `blacklistedTokens` from a `Set<hash>` to a `Map<hash, expiresAtMs>`. `_blacklist` now
+  stores an actual expiry (mirroring the Redis path's TTL); `_isBlacklisted` treats an expired entry as absent;
+  `cleanup()` prunes only entries past their own TTL instead of wholesale-clearing at a size threshold.
+- **Why:** Matches the Redis path's real TTL semantics instead of an arbitrary size-based purge, with no
+  unbounded growth risk (still bounded by TTL) and no behavior change for the primary Redis-backed deployment.
+- **Tradeoffs / risks (if applicable):** None material — same memory profile as before (still self-pruning),
+  just correct instead of a "works until it doesn't" cliff.

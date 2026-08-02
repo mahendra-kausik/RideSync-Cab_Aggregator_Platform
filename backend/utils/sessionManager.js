@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { User } = require('../models');
 const redis = require('../config/redis');
 const { withRedisTimeout } = require('./withRedisTimeout');
+const { auth: authConfig, session: sessionConfig } = require('../config/security');
 
 /**
  * Secure Session Management Utility
@@ -14,16 +15,15 @@ const { withRedisTimeout } = require('./withRedisTimeout');
 const SESSION_PREFIX = 'sess:';
 const USER_SESSIONS_PREFIX = 'sess:user:';
 const BLACKLIST_PREFIX = 'bl:';
-const BLACKLIST_TTL_SECONDS = 7 * 24 * 60 * 60; // covers the longest-lived token (refresh, 7d)
+const BLACKLIST_TTL_SECONDS = sessionConfig.blacklistTtlSeconds;
 
 class SessionManager {
   constructor() {
     this.redis = redis;
     this.activeSessions = new Map(); // in-memory fallback session store
-    this.blacklistedTokens = new Set(); // in-memory fallback blacklist
-    this.maxSessionsPerUser = 5; // Maximum concurrent sessions per user
-    this.sessionTimeout = 24 * 60 * 60 * 1000; // 24 hours
-    this.rotationThreshold = 12 * 60 * 60 * 1000; // 12 hours
+    this.blacklistedTokens = new Map(); // in-memory fallback blacklist: hash -> expiresAtMs
+    this.maxSessionsPerUser = sessionConfig.maxSessionsPerUser;
+    this.sessionTimeout = sessionConfig.sessionTimeoutHours * 60 * 60 * 1000;
   }
 
   /**
@@ -68,7 +68,7 @@ class SessionManager {
       accessToken,
       refreshToken,
       sessionId,
-      expiresIn: '24h',
+      expiresIn: authConfig.accessTokenExpiresIn,
       user: {
         id: user._id,
         role: user.role,
@@ -79,9 +79,9 @@ class SessionManager {
   }
 
   /**
-   * Validate and refresh session
-   * @param {string} token - Access or refresh token
-   * @returns {Object} - Validation result and new tokens if needed
+   * Validate an access token against the blacklist and session store.
+   * @param {string} token - Access token
+   * @returns {Object} - { valid, user, sessionId } or { valid: false, error }
    */
   async validateSession(token) {
     try {
@@ -112,28 +112,11 @@ class SessionManager {
       session.lastActivity = now;
       await this._putSession(decoded.sessionId, session);
 
-      const tokenAge = now - new Date(decoded.iat * 1000);
-      const needsRotation = tokenAge > this.rotationThreshold;
-
-      const result = {
+      return {
         valid: true,
         user: decoded,
-        sessionId: decoded.sessionId,
-        needsRotation
+        sessionId: decoded.sessionId
       };
-
-      if (needsRotation) {
-        const user = await User.findById(decoded.userId);
-        if (user) {
-          const newSession = await this.rotateSession(decoded.sessionId, user);
-          result.newTokens = {
-            accessToken: newSession.accessToken,
-            refreshToken: newSession.refreshToken
-          };
-        }
-      }
-
-      return result;
     } catch (error) {
       return {
         valid: false,
@@ -175,6 +158,76 @@ class SessionManager {
     await this._putSession(sessionId, session);
 
     return { accessToken, refreshToken };
+  }
+
+  /**
+   * Exchange a refresh token for a new access+refresh pair.
+   * Detects refresh-token reuse (a token already superseded by rotation) and
+   * treats it as theft: the whole session is killed rather than just denying
+   * the request, so a stolen-and-replayed refresh token can't keep retrying.
+   * @param {string} token - Refresh token presented by the client
+   * @returns {Object} - { valid, accessToken, refreshToken, expiresIn, error }
+   */
+  async refreshSession(token) {
+    try {
+      // Verify signature/expiry before the blacklist check — a blacklist hit
+      // needs the decoded sessionId to kill the session (see below), and a
+      // forged/expired token shouldn't be able to trigger that.
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+      if (decoded.type !== 'refresh') {
+        throw new Error('Token is not a valid refresh token');
+      }
+
+      if (await this._isBlacklisted(this.hashToken(token))) {
+        // A valid-signature refresh token that's already blacklisted means it
+        // was already rotated away (rotateSession blacklists the token it
+        // supersedes) and is now being replayed — reuse/theft. Kill the
+        // session so the legitimately-rotated token that replaced it is
+        // invalidated too, not just this request denied.
+        await this.invalidateSession(decoded.sessionId);
+        throw new Error('Refresh token reuse detected');
+      }
+
+      const session = await this._getSession(decoded.sessionId);
+      if (!session || !session.isActive) {
+        throw new Error('Session not found or inactive');
+      }
+
+      if (this.hashToken(token) !== session.refreshToken) {
+        // Defense in depth: valid, non-blacklisted token that still doesn't
+        // match the session's current refresh hash shouldn't be reachable,
+        // but treat it the same as a confirmed reuse if it ever happens.
+        await this.invalidateSession(decoded.sessionId);
+        throw new Error('Refresh token reuse detected');
+      }
+
+      const now = new Date();
+      if (now - session.lastActivity > this.sessionTimeout) {
+        await this.invalidateSession(decoded.sessionId);
+        throw new Error('Session expired');
+      }
+
+      const user = await User.findById(decoded.userId);
+      if (!user) {
+        await this.invalidateSession(decoded.sessionId);
+        throw new Error('User not found');
+      }
+
+      const newSession = await this.rotateSession(decoded.sessionId, user);
+
+      return {
+        valid: true,
+        accessToken: newSession.accessToken,
+        refreshToken: newSession.refreshToken,
+        expiresIn: authConfig.accessTokenExpiresIn
+      };
+    } catch (error) {
+      return {
+        valid: false,
+        error: error.message
+      };
+    }
   }
 
   /**
@@ -255,7 +308,7 @@ class SessionManager {
    */
   generateAccessToken(payload) {
     return jwt.sign({ ...payload, type: 'access' }, process.env.JWT_SECRET, {
-      expiresIn: '24h',
+      expiresIn: authConfig.accessTokenExpiresIn,
       issuer: 'cab-aggregator',
       audience: 'cab-aggregator-users'
     });
@@ -268,7 +321,7 @@ class SessionManager {
    */
   generateRefreshToken(payload) {
     return jwt.sign({ ...payload, type: 'refresh' }, process.env.JWT_SECRET, {
-      expiresIn: '7d',
+      expiresIn: authConfig.refreshTokenExpiresIn,
       issuer: 'cab-aggregator',
       audience: 'cab-aggregator-users'
     });
@@ -308,9 +361,14 @@ return;
       }
     }
 
-    // Clear old blacklisted tokens (keep for 7 days)
-    if (this.blacklistedTokens.size > 10000) {
-      this.blacklistedTokens.clear(); // Simple cleanup for demo
+    // Prune only entries past their own TTL — a wholesale clear() at a size
+    // threshold would silently un-revoke every still-valid blacklisted token
+    // (defeating logout) whenever traffic pushes the map past that size.
+    const nowMs = Date.now();
+    for (const [hash, expiresAtMs] of this.blacklistedTokens.entries()) {
+      if (expiresAtMs <= nowMs) {
+        this.blacklistedTokens.delete(hash);
+      }
     }
   }
 
@@ -405,14 +463,22 @@ ids.push(sessionId);
       await withRedisTimeout(this.redis.set(`${BLACKLIST_PREFIX}${hashedToken}`, '1', 'EX', BLACKLIST_TTL_SECONDS), undefined, 'blacklist:set');
       return;
     }
-    this.blacklistedTokens.add(hashedToken);
+    this.blacklistedTokens.set(hashedToken, Date.now() + BLACKLIST_TTL_SECONDS * 1000);
   }
 
   async _isBlacklisted(hashedToken) {
     if (this.redis) {
       return (await withRedisTimeout(this.redis.exists(`${BLACKLIST_PREFIX}${hashedToken}`), undefined, 'blacklist:exists')) === 1;
     }
-    return this.blacklistedTokens.has(hashedToken);
+    const expiresAtMs = this.blacklistedTokens.get(hashedToken);
+    if (expiresAtMs === undefined) {
+      return false;
+    }
+    if (expiresAtMs <= Date.now()) {
+      this.blacklistedTokens.delete(hashedToken);
+      return false;
+    }
+    return true;
   }
 
   async _scanCount(pattern) {

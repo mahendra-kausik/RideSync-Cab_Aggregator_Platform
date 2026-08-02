@@ -229,7 +229,7 @@ describe('Authentication Middleware - authenticateToken', () => {
             expect(res.status).not.toHaveBeenCalled();
         });
 
-        it('should handle token rotation and set new tokens in headers', async () => {
+        it('should not push rotation headers — rotation now happens only via POST /auth/refresh', async () => {
             const userId = '123';
             const mockUser = {
                 _id: userId,
@@ -243,11 +243,7 @@ describe('Authentication Middleware - authenticateToken', () => {
             sessionManager.validateSession.mockResolvedValue({
                 valid: true,
                 user: { userId },
-                sessionId: 'session123',
-                newTokens: {
-                    accessToken: 'new-access-token',
-                    refreshToken: 'new-refresh-token'
-                }
+                sessionId: 'session123'
             });
 
             User.findById.mockReturnValue({
@@ -256,8 +252,7 @@ describe('Authentication Middleware - authenticateToken', () => {
 
             await authMiddleware.authenticateToken(req, res, next);
 
-            expect(res.set).toHaveBeenCalledWith('X-New-Access-Token', 'new-access-token');
-            expect(res.set).toHaveBeenCalledWith('X-New-Refresh-Token', 'new-refresh-token');
+            expect(res.set).not.toHaveBeenCalled();
             expect(next).toHaveBeenCalled();
         });
     });

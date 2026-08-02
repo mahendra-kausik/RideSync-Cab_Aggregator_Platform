@@ -7,7 +7,9 @@ const securityConfig = {
   // Authentication settings
   auth: {
     jwtSecret: process.env.JWT_SECRET,
-    jwtExpiresIn: process.env.JWT_EXPIRES_IN || '24h',
+    // Short-lived: a stolen access token self-expires quickly. The refresh
+    // token (below) is what carries the 7-day session and is revocable.
+    accessTokenExpiresIn: process.env.ACCESS_TOKEN_EXPIRES_IN || '15m',
     refreshTokenExpiresIn: '7d',
     bcryptSaltRounds: 12,
     otpLength: 6,
@@ -20,8 +22,10 @@ const securityConfig = {
   // Session management
   session: {
     maxSessionsPerUser: 5,
-    sessionTimeoutHours: 24,
-    tokenRotationHours: 12,
+    // Idle timeout must exceed the refresh token's lifetime, or a session
+    // could go idle-stale before its refresh token even expires.
+    sessionTimeoutHours: 7 * 24,
+    blacklistTtlSeconds: 7 * 24 * 60 * 60, // covers the longest-lived token (refresh, 7d)
     cleanupIntervalMinutes: 60
   },
 
@@ -127,7 +131,7 @@ const securityConfig = {
       'Accept',
       'Origin'
     ],
-    exposedHeaders: ['X-Total-Count', 'X-New-Access-Token', 'X-New-Refresh-Token'],
+    exposedHeaders: ['X-Total-Count'],
     maxAge: 86400 // 24 hours
   },
 
