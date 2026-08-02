@@ -369,6 +369,24 @@ P-007-style "looks wired up, silently isn't" bugs:
   aggregate) so `users.admins` stays reported. Added 1 new integration test for the previously-uncovered
   `/users/admin/stats` endpoint. Backend 183/183, frontend lint 0 errors/12 warnings (baseline), type-check
   clean, build clean, 59/59 frontend tests. Full writeup in DECISIONS.md P-020.
+- P-021 — Two requests: driver earnings crediting before payment, and whether password encryption works
+  on profile edits. (1) Earnings turned out to have no stored balance at all — every earnings figure is
+  computed on read by summing completed rides' fares, in 4 backend places plus one frontend calc, none of
+  which checked `payment.status`. Added `'payment.status': 'completed'` to all 5. Also unified a pre-existing
+  split where the driver's own profile page showed 100% of fare while My Rides showed 80% for the same
+  rides — added `driverSharePct: 0.8` to `FareService.PRICING_CONFIG` and applied it everywhere (mirrored
+  frontend-side as `DRIVER_SHARE_PCT`, since the frontend can't import backend config for one number).
+  My Rides' per-ride earnings row now shows "Awaiting payment" instead of a figure when unpaid, so rows and
+  the total agree. (2) Investigated and found **no bug**: `changePassword` already fetches-then-`.save()`s,
+  so the bcrypt pre-save hook fires (12 rounds); PII fields already encrypt correctly on profile edits since
+  P-019. Passwords are hashed, not encrypted — correct by design, since hashing is one-way. Fixed the two
+  real gaps found along the way: added a regression test for `PUT /users/password` (none existed — asserts
+  the raw stored value is a bcrypt hash, not plaintext, and that login works with the new password/fails
+  with the old), and converted `scripts/reset-password.js` off its own duplicate `bcrypt.hash` call to the
+  same fetch-then-`.save()` pattern. Backend 184/184, frontend lint 0 errors/12 warnings (baseline),
+  type-check clean, build clean, 59/59 frontend tests. Historical rides completed-but-unpaid before this
+  change will show lower earnings on next read (no data rewritten, per user's call) — full writeup in
+  DECISIONS.md P-021.
 
 ## Open items
 - ~~P-009: live re-verification~~ — **resolved**: confirmed live from two different devices; `trust proxy`

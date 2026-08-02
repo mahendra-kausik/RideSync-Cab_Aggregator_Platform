@@ -7,6 +7,9 @@ import { Ride } from '../../types';
 import Receipt from '../../components/common/Receipt';
 import './DriverMyRides.css';
 
+// Driver's cut of a paid fare; mirrors backend/services/FareService.js PRICING_CONFIG.driverSharePct
+const DRIVER_SHARE_PCT = 0.8;
+
 const DriverMyRides: React.FC = () => {
     const navigate = useNavigate();
     const [rides, setRides] = useState<Ride[]>([]);
@@ -108,8 +111,8 @@ const DriverMyRides: React.FC = () => {
 
     const calculateEarnings = () => {
         return rides
-            .filter(ride => ride.status === 'completed')
-            .reduce((total, ride) => total + ((ride.fare.final || ride.fare.estimated) * 0.8), 0);
+            .filter(ride => ride.status === 'completed' && ride.payment?.status === 'completed')
+            .reduce((total, ride) => total + ((ride.fare.final || ride.fare.estimated) * DRIVER_SHARE_PCT), 0);
     };
 
     if (isLoading) {
@@ -247,7 +250,9 @@ const DriverMyRides: React.FC = () => {
                                         <div className="info-item">
                                             <span className="info-label">Earnings</span>
                                             <span className="info-value earnings">
-                                                {formatCurrency((ride.fare.final || ride.fare.estimated) * 0.8)}
+                                                {ride.status === 'completed' && ride.payment?.status !== 'completed'
+                                                    ? 'Awaiting payment'
+                                                    : formatCurrency((ride.fare.final || ride.fare.estimated) * DRIVER_SHARE_PCT)}
                                             </span>
                                         </div>
 

@@ -23,6 +23,7 @@ class FareService {
     perMinRate: 2,         // Rate per minute (₹/min)
     minimumFare: 75,       // Minimum fare regardless of distance/time (₹)
     maximumFare: 5000,     // Maximum fare cap for safety (₹)
+    driverSharePct: 0.8,   // Driver's cut of a paid fare; platform keeps the rest
 
     // Surge pricing thresholds
     surgePricing: {

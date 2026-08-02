@@ -1596,3 +1596,67 @@
   admin, since `/users/admin/stats` had zero prior coverage; the pre-existing search-only tests in that
   file (`pagination.total` of 1 and 0) were left untouched, as they pass precisely because `getAllUsers`
   already excludes admins.
+
+## P-021 — Driver earnings credited before payment (never actually stored, computed on read); password/PII encryption verified already correct
+- **Date / Layer:** 2026-08-02 / post-ship bugfix
+- **Context:** Reported as "driver earnings update before the rider pays" and "is the password
+  encrypted on profile edits — implement it if not." Investigated both before touching anything.
+- **Root cause (earnings):** There is no `earnings` field anywhere on the `User` model and no write ever
+  increments one — every earnings figure in the app is recomputed on read by summing `Ride.fare` over
+  `status: 'completed'` rides, in four separately-written places (`userController.getUserStats` driver
+  branch, `getDriverStats`, admin `getUserById`, admin `getPlatformStats`'s revenue block, plus
+  `DriverMyRides.tsx`'s client-side `calculateEarnings()`). None of the five filtered on `payment.status`,
+  so a ride the driver marked complete counted as earnings whether or not the rider ever paid — because
+  there was no persisted balance to have been written early, the actual defect was a missing read-time
+  filter, not a misplaced write. Confirmed via a full-repo audit: `completeRide`
+  (`rideController.js:970-1112`) never touches `User` at all; `paymentController.processPayment` only
+  writes `ride.payment`, never a driver balance. Separately, the five formulas disagreed with each other —
+  the driver's own profile page reported 100% of fare while My Rides reported 80% for the same rides.
+- **Root cause (password/PII):** No bug found. `changePassword` (`userController.js`) does
+  `User.findById(...).select('+password')` → `user.password = newPassword` → `user.save()`, so the
+  `pre('save')` bcrypt hook (`models/User.js:280-294`, 12 salt rounds) fires correctly. Registration and
+  `scripts/seed.js` both use `new User(...)` + `.save()`. Every remaining `findByIdAndUpdate`/`$set` against
+  `User` was audited and writes only non-PII, non-password fields (driver location, availability, rating
+  counters, `lastLogin`). PII fields (`profile.name`, `email`, `phone`, `driverInfo.licenseNumber`,
+  `driverInfo.vehicleDetails.plateNumber`) encrypt correctly on profile edits via the same `.save()` path
+  fixed under P-019. Passwords are **hashed**, not encrypted — the right primitive here, since hashing is
+  one-way and a DB leak can't recover the plaintext; genuine encryption would be the wrong (reversible)
+  choice for a password field. The only two real gaps: zero test coverage on `PUT /users/password`, and
+  `scripts/reset-password.js` bypassing the hook with its own `bcrypt.hash(...)` + `User.updateOne($set)` —
+  not a vulnerability (correct algorithm/cost), but a second, driftable place hashing could go stale.
+- **Decision:**
+  1. Added `driverSharePct: 0.8` to `FareService.PRICING_CONFIG` (the existing tunables object — no new
+     config file for one constant) and used it everywhere a driver-cut literal existed (`0.8` in two
+     `userController.js` sites, `1 - driverSharePct` for the platform's complementary cut in the revenue
+     aggregate). Added `'payment.status': 'completed'` to all four backend earnings reads and to
+     `DriverMyRides.tsx`'s `calculateEarnings()`. Mirrored the constant frontend-side as
+     `DRIVER_SHARE_PCT` (the frontend can't import backend config for one number — a shared-config layer
+     for this would be over-engineering the ask). The per-ride "Earnings" row in `DriverMyRides.tsx` now
+     shows "Awaiting payment" instead of a dollar figure when the ride is completed but unpaid, so rows and
+     the page total stay consistent instead of a row implying money the total doesn't include.
+  2. Left ride *counts* (`totalRides`/`completedRides`/`todayRides`) keyed on `status` alone — a completed
+     ride is a completed ride regardless of payment; only money is gated.
+  3. Added the missing regression test to `backend/__tests__/integration/user-profile-api.test.js` (already
+     the P-019 encryption-at-rest suite, same raw-collection-read pattern reused): change password, assert
+     the raw stored value matches bcrypt's `$2[aby]$` prefix and isn't the plaintext, then assert login
+     succeeds with the new password and fails with the old.
+  4. Converted `scripts/reset-password.js` to fetch-then-`.save()`, deleting its duplicate `bcrypt.hash`
+     call so it goes through the same hook as `changePassword`.
+- **Why:** Read-time filtering is the correct fix once you know there's no stored balance to correct — the
+  alternative (introduce a persisted `driverInfo.earnings` incremented on payment) would be a bigger,
+  riskier change to add a write path that doesn't currently exist, for no benefit over filtering the
+  existing reads. Standardizing on 80% (your call) matches the admin dashboard's pre-existing 20% platform
+  cut in the same file, so all readouts now agree instead of three different formulas.
+- **Alternatives considered:** Introducing a persisted, incrementally-updated earnings balance (`$inc` on
+  payment completion) — rejected as unnecessary complexity; the read-side aggregate already computes the
+  correct number cheaply at the app's current scale, and adding a write path introduces a new place for the
+  count to drift out of sync with the ride ledger. Standardizing on 100% instead of 80% — rejected (your
+  call) since it would leave the admin dashboard's revenue split disagreeing with the driver's own numbers.
+- **Tradeoffs / risks:** Historical rides completed before this change that were never paid will now drop
+  out of earnings totals on next read — per your call, existing data is left untouched (nothing is deleted
+  or rewritten), so this is the read query changing, not a migration; a driver's displayed lifetime
+  earnings may simply decrease after deploy for any such ride. The admin dashboard's platform-revenue figure
+  moves for the same reason (an uncollected fare was never real revenue). No test coverage exists for the
+  earnings queries themselves (zero prior tests matched `earnings`/`totalEarnings`/`driver/stats`), so this
+  fix was verified by manual end-to-end run rather than an automated regression test — left as a gap for a
+  future pass rather than added here to keep this change scoped to what was asked.

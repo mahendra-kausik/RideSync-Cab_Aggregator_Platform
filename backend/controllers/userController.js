@@ -1,6 +1,9 @@
 const User = require('../models/User');
 const Ride = require('../models/Ride');
 const bcrypt = require('bcryptjs');
+const FareService = require('../services/FareService');
+
+const { driverSharePct } = FareService.PRICING_CONFIG;
 
 class UserController {
   /**
@@ -242,15 +245,16 @@ class UserController {
         const completedRides = await Ride.countDocuments({ driverId: userId, status: 'completed' });
         const cancelledRides = await Ride.countDocuments({ driverId: userId, status: 'cancelled' });
 
-        // Calculate earnings
+        // Calculate earnings - only rides the rider has actually paid for
         const completedRidesData = await Ride.find({
           driverId: userId,
           status: 'completed',
-          'fare.final': { $exists: true }
+          'fare.final': { $exists: true },
+          'payment.status': 'completed'
         }).select('fare.final');
 
         const totalEarnings = completedRidesData.reduce((total, ride) => {
-          return total + (ride.fare.final || 0);
+          return total + (ride.fare.final || 0) * driverSharePct;
         }, 0);
 
         // Get average rating
@@ -531,14 +535,16 @@ class UserController {
         }
       });
 
+      // Only rides the rider has actually paid for count toward earnings
       const completedRides = await Ride.find({
         driverId: userId,
         status: 'completed',
-        'fare.final': { $exists: true }
+        'fare.final': { $exists: true },
+        'payment.status': 'completed'
       }).select('fare.final');
 
       const earnings = completedRides.reduce((total, ride) => {
-        return total + (ride.fare.final || 0);
+        return total + (ride.fare.final || 0) * driverSharePct;
       }, 0);
 
       const stats = {
@@ -696,7 +702,15 @@ class UserController {
             totalRides: { $sum: 1 },
             completedRides: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
             cancelledRides: { $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] } },
-            totalEarnings: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, '$fareAmount', 0] } }
+            totalEarnings: {
+              $sum: {
+                $cond: [
+                  { $and: [{ $eq: ['$status', 'completed'] }, { $eq: ['$payment.status', 'completed'] }] },
+                  '$fareAmount',
+                  0
+                ]
+              }
+            }
           }
         }
       ]);
@@ -708,9 +722,9 @@ class UserController {
         totalEarnings: 0
       };
 
-      // For drivers, calculate 80% of total earnings (driver's cut)
+      // For drivers, this is their share of the (paid-only) fare total above
       if (user.role === 'driver' && stats.totalEarnings > 0) {
-        stats.totalEarnings = stats.totalEarnings * 0.8;
+        stats.totalEarnings = stats.totalEarnings * driverSharePct;
       }
 
       res.json({
@@ -898,9 +912,9 @@ class UserController {
         }
       ]);
 
-      // Get revenue statistics (platform takes 20% of total fare)
+      // Get revenue statistics (platform takes its cut only on fares the rider actually paid)
       const revenueStats = await Ride.aggregate([
-        { $match: { status: 'completed' } },
+        { $match: { status: 'completed', 'payment.status': 'completed' } },
         {
           $addFields: {
             fareAmount: { $ifNull: ['$fare.final', '$fare.estimated'] }
@@ -909,8 +923,8 @@ class UserController {
         {
           $group: {
             _id: null,
-            totalRevenue: { $sum: { $multiply: ['$fareAmount', 0.2] } }, // Platform's 20% cut
-            totalDriverEarnings: { $sum: { $multiply: ['$fareAmount', 0.8] } }, // Driver's 80% cut
+            totalRevenue: { $sum: { $multiply: ['$fareAmount', 1 - driverSharePct] } }, // Platform's cut
+            totalDriverEarnings: { $sum: { $multiply: ['$fareAmount', driverSharePct] } }, // Driver's cut
             totalRides: { $sum: 1 },
             averageFare: { $avg: '$fareAmount' }
           }

@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
 // MongoDB connection - use the same connection string as the backend
@@ -23,16 +22,12 @@ async function resetPassword(phone, newPassword) {
         }
 
         console.log(`✅ Found user: ${user.profile.name}`);
-        console.log('🔒 Hashing new password...');
-
-        const saltRounds = 12;
-        const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
-
         console.log('💾 Updating password in database...');
-        await User.updateOne(
-            { _id: user._id },
-            { $set: { password: hashedPassword } }
-        );
+
+        // Assign plaintext and .save() so the model's pre('save') hook hashes it
+        // (same path as the changePassword endpoint) instead of duplicating bcrypt here.
+        user.password = newPassword;
+        await user.save();
 
         console.log('✅ Password reset successfully!');
         console.log('📝 You can now login with:');

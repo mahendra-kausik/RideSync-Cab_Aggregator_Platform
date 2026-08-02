@@ -84,4 +84,33 @@ describe('User Profile API - PII encryption on update (Integration)', () => {
         expect(raw.driverInfo.licenseNumber).not.toBe('DL99999999');
         expect(raw.driverInfo.licenseNumber.length).toBeGreaterThanOrEqual(64);
     });
+
+    // Verifies PUT /users/password routes through the pre('save') hash hook
+    // (fetch-then-.save(), same pattern as the PII fixes above) rather than a
+    // raw update query that would store the password as plaintext.
+    it('hashes the new password at rest after PUT /users/password', async () => {
+        const phone = '5550002003';
+        const { token, userId } = await registerAndVerify(phone);
+
+        const res = await request(app)
+            .put('/api/users/password')
+            .set('Authorization', `Bearer ${token}`)
+            .send({ currentPassword: 'Original#123', newPassword: 'Updated#456' });
+
+        expect(res.status).toBe(200);
+
+        const raw = await mongoose.connection.collection('users')
+            .findOne({ _id: new mongoose.Types.ObjectId(userId) });
+
+        expect(raw.password).not.toBe('Updated#456');
+        expect(raw.password).toMatch(/^\$2[aby]?\$/); // bcrypt hash prefix
+
+        const loginNew = await request(app).post('/api/auth/login-phone')
+            .send({ phone, password: 'Updated#456' });
+        expect(loginNew.status).toBe(200);
+
+        const loginOld = await request(app).post('/api/auth/login-phone')
+            .send({ phone, password: 'Original#123' });
+        expect(loginOld.status).not.toBe(200);
+    });
 });
