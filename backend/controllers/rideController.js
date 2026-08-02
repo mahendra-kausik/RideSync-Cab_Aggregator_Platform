@@ -398,9 +398,12 @@ class RideController {
           });
         }
 
-        // Find rides near driver location
+        // Find rides near driver location. Excludes rides this driver already declined/timed-out on
+        // (rejectedBy) - otherwise an expired offer reappears in this same driver's list immediately
+        // after the ride reverts to 'requested'.
         const rides = await Ride.find({
           status: 'requested',
+          rejectedBy: { $ne: req.user._id },
           'pickup.coordinates': {
             $near: {
               $geometry: {

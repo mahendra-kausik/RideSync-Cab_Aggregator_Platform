@@ -37,13 +37,18 @@ const OfferCard: React.FC<OfferCardProps> = ({ offer, onAccept, onDecline, accep
     return () => clearInterval(interval);
   }, [offer.expiresAt]);
 
-  const busy = accepting || declining;
+  // Countdown reaching 0 disables the buttons immediately, client-side, rather than waiting on the
+  // ride:offer-expired socket event (which the server also sends, but a missed event - e.g. a
+  // disconnect/reconnect gap - would otherwise leave a stale offer clickable indefinitely). The
+  // server independently enforces this too (offerExpiresAt is checked atomically on accept).
+  const expired = secondsLeft === 0;
+  const busy = accepting || declining || expired;
 
   return (
     <div className="pending-rides-section offer-card-section">
       <div className="section-header">
         <h3>🔔 New Ride Offer</h3>
-        <span className="ride-time">{secondsLeft}s to respond</span>
+        <span className="ride-time">{expired ? 'Offer expired' : `${secondsLeft}s to respond`}</span>
       </div>
 
       <div className="rides-list">

@@ -61,4 +61,33 @@ describe('Rides API (Integration)', () => {
         expect(res.body.data.ride).toBeDefined();
         expect(res.body.data.ride.status).toBe('requested');
     });
+
+    it('should exclude a ride from a driver\'s pending list once that driver is in rejectedBy', async () => {
+        // Calls the controller directly rather than over HTTP: requireAuth needs a session
+        // registered via sessionManager (login/OTP flow), not just a signed JWT, which is more
+        // machinery than this DB-query-filtering behavior needs to exercise.
+        const RideController = require('../../controllers/rideController');
+        const driver = await global.testUtils.createTestDriver({ phone: '5550002000' });
+        const ride = await global.testUtils.createTestRide({
+            estimatedDistance: 5,
+            estimatedDuration: 12,
+            fare: { estimated: 15.5, breakdown: { baseFare: 5, distanceFare: 8, timeFare: 2.5, surgeFare: 0 } },
+            rejectedBy: [driver._id]
+        });
+
+        const req = {
+            user: driver,
+            query: {
+                lat: String(ride.pickup.coordinates.coordinates[1]),
+                lng: String(ride.pickup.coordinates.coordinates[0])
+            }
+        };
+        const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+        await RideController.getPendingRides(req, res);
+
+        expect(res.status).not.toHaveBeenCalledWith(400);
+        const responseBody = res.json.mock.calls[0][0];
+        expect(responseBody.data.rides.map(r => r._id.toString())).not.toContain(ride._id.toString());
+    });
 });

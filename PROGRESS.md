@@ -6,10 +6,10 @@
 
 ## Current status
 **As of 2026-08-03: all 6 layers shipped (Layer 5 — README-as-paper — is done, see the Layer checklist
-below), P-006 → P-022 post-ship fixes shipped and verified. P-023 is fully shipped this session: Phase 1
-(matching actually finds drivers) and Phase 2 (sequential offer/accept/decline flow, D-018) are both
-done. Backend 189/189 tests (5 new offer-flow tests added), frontend type-check clean, 59/59 tests. Not
-yet pushed to remote or re-verified against a live deploy.**
+below), P-006 → P-022 post-ship fixes shipped and verified. P-023 (both phases) shipped and pushed. P-024
+(offer-expiry race) shipped this session. Backend 192/192 tests, frontend type-check clean, 59/59 tests.
+Part B of the same investigation (server-side OSRM route as the single source of truth for distance/
+duration/fare, replacing Haversine) is planned but not yet built — see Open items.**
 The narrative below is
 kept as the historical build log; each entry's numbers are accurate as of when it was written, not
 necessarily current — see `PROGRESS.md`'s per-P-XXX entries further down for the latest state of any
@@ -433,8 +433,31 @@ P-007-style "looks wired up, silently isn't" bugs:
   component (accept/decline buttons, live countdown) round it out. `Ride` schema gained `offerExpiresAt`
   and `rejectedBy`. 5 new tests cover offer/accept/decline/expire/no-re-offer-to-rejected. Backend
   **189/189**, frontend type-check clean, **59/59** frontend tests.
+- P-024 — User reported that after a driver's ride offer expired, it stayed visible and Accept still
+  worked. Found **five** independent gaps in the P-023 Phase 2 offer/accept/decline code (full writeup in
+  DECISIONS.md P-024): `offerRideToDriver` never checked `rejectedBy`, so a driver whose offer expired
+  could re-offer the ride to themselves via `acceptRide`'s pending-list-claim fallback; `acceptOffer` never
+  checked `offerExpiresAt`, so a lapsed-but-not-yet-swept offer (up to the sweeper's 10s interval) was
+  still directly acceptable; `getPendingRides` didn't exclude `rejectedBy`, so an expired ride reappeared
+  in the same driver's list; and `OfferCard`'s countdown was cosmetic — it never disabled its own buttons
+  at 0s, relying solely on a `ride:offer-expired` socket event that could be missed. Fixed all five with
+  atomic MongoDB filter additions (`rejectedBy`/`offerExpiresAt` guards on the existing `findOneAndUpdate`
+  calls — no new read-then-check races introduced) plus a client-side self-disable in `OfferCard` at 0s.
+  3 new backend tests. Backend **192/192**, frontend type-check clean, **59/59** frontend tests.
 
 ## Open items
+- **P-024 Part B not started** (same investigation, deferred by design — see `DECISIONS.md` for the plan
+  discussion): distance/duration/fare are still computed from straight-line (Haversine) distance, and
+  several UI surfaces independently re-fetch OSRM client-side for display, causing a "shows straight-line
+  first, then swaps to route distance" flicker and a driver-vs-rider number mismatch. Confirmed approach:
+  move the OSRM route calculation server-side into `bookRide`/`getFareEstimate` (new `RoutingService`,
+  wrapped in `GracefulDegradationService`'s circuit-breaker pattern with a Haversine fallback if OSRM is
+  down), persist it as the canonical `Ride.estimatedDistance`/`estimatedDuration`, and have every display
+  surface (rider overlay, `OfferCard`, `PendingRidesSection`, `ActiveRideSection`) read that persisted value
+  instead of re-deriving it. This also changes fare amounts slightly (route distance ≥ straight-line) —
+  already confirmed as the intended outcome, not a side effect to avoid. See the plan file
+  `~/.claude/plans/right-now-when-a-soft-wind.md` for full file-by-file detail; awaiting go-ahead to
+  implement.
 - ~~P-009: live re-verification~~ — **resolved**: confirmed live from two different devices; `trust proxy`
   fix works (distinct client IPs, IP+account lockout genuinely IP-scoped in production).
 - ~~Stray Atlas account (phone `4444444444`)~~ — **resolved**: deleted from Atlas by the user. Live `users`
@@ -447,9 +470,12 @@ P-007-style "looks wired up, silently isn't" bugs:
 ## How to resume
 1. Read this file, then `CLAUDE.md`. All 6 layers are shipped, including **Layer 5 — README-as-paper**
    (see the Layer checklist above — this was previously mis-stated as pending in this section; it shipped
-   as commit `e95217a`). P-023 (both phases) is shipped. Current verified baseline: backend **189/189**,
-   frontend type-check clean, **59/59** — not yet re-checked in CI, not yet pushed to remote, and the live
-   deploy has not been re-verified against these changes.
-2. No queued layer or open plan to act on. If resuming after a long gap, sanity-check the live deploy
-   (`/health`, a demo login, an actual two-browser ride-offer test) before assuming anything above is
-   still true — free-tier hosts and long idle periods are the likeliest sources of drift.
+   as commit `e95217a`). P-023 (both phases) and P-024 are shipped. Current verified baseline: backend
+   **192/192**, frontend type-check clean, **59/59** — not yet re-checked in CI, and the live deploy has
+   not been re-verified against these changes.
+2. **Open work:** P-024 Part B (server-side OSRM route as the canonical distance/duration/fare source,
+   replacing Haversine) is planned and approved but not yet implemented — see Open items above and the
+   plan file `~/.claude/plans/right-now-when-a-soft-wind.md`.
+3. If resuming after a long gap, sanity-check the live deploy (`/health`, a demo login, an actual
+   two-browser ride-offer test) before assuming anything above is still true — free-tier hosts and long
+   idle periods are the likeliest sources of drift.

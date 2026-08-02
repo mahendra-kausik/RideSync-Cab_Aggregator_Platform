@@ -218,12 +218,15 @@ class MatchingService {
         try {
             const offerExpiresAt = new Date(Date.now() + this.DRIVER_RESPONSE_TIMEOUT);
 
-            // Step 1: Atomically move ride into the offer-pending state (prevents double-booking)
+            // Step 1: Atomically move ride into the offer-pending state (prevents double-booking).
+            // rejectedBy excludes a driver who already declined/timed-out on this ride - without this
+            // guard, that driver could re-offer the ride to themselves via the acceptRide fallback path.
             const ride = await Ride.findOneAndUpdate(
                 {
                     _id: rideId,
                     status: 'requested',
-                    driverId: null // Ensure ride hasn't been offered/assigned yet
+                    driverId: null, // Ensure ride hasn't been offered/assigned yet
+                    rejectedBy: { $ne: driverId }
                 },
                 {
                     driverId: driverId,
@@ -306,11 +309,15 @@ class MatchingService {
      */
     static async acceptOffer(rideId, driverId) {
         try {
+            // offerExpiresAt guard is the authoritative fix for the expiry race: the sweeper
+            // (expireStaleOffers) only runs every 10s, so without this check a driver could still
+            // accept a ride whose offer has already lapsed but hasn't been swept yet.
             const ride = await Ride.findOneAndUpdate(
                 {
                     _id: rideId,
                     status: 'matched',
-                    driverId: driverId
+                    driverId: driverId,
+                    offerExpiresAt: { $gt: new Date() }
                 },
                 {
                     status: 'accepted',

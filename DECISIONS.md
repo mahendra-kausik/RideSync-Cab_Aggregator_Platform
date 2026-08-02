@@ -1798,3 +1798,49 @@
   branch has never been and still isn't reachable — removing genuinely-dead code here was judged not worth
   the diff for a change already touching many files.
 - **Supersedes:** The `assignRideToDriver` auto-accept behavior described (but not fixed) in P-023.
+
+## P-024 — Driver could accept a ride offer after it had already expired
+- **Date / Layer:** 2026-08-03 / P-023 Phase 2 follow-up bugfix
+- **Context:** User reported that after a ride offer's 30s countdown expired, the offer stayed visible in
+  the driver's UI and Accept still worked. Investigation (two Explore subagents tracing the offer/accept/
+  decline code shipped for P-023 Phase 2) found five independent gaps, not one:
+  1. `MatchingService.offerRideToDriver`'s atomic guard only checked `{status:'requested', driverId:null}` —
+     it never consulted `rejectedBy`, which was enforced only inside the driver *search*
+     (`_findAvailableDriversInRadius`'s `$nin`), never at the offer boundary. Combined with #2 below, this
+     was a live exploit: offer expires → sweeper reverts the ride to `requested` → the same driver POSTs
+     `/accept` → `acceptRide`'s pending-list-claim fallback re-offers the ride to that same driver and
+     immediately accepts it, bypassing the decline/expiry entirely.
+  2. `rideController.acceptRide`'s fallback path (for claiming an unoffered ride off the pending list) had
+     no independent check — it relied entirely on gap #1 not existing.
+  3. `MatchingService.acceptOffer` didn't check `offerExpiresAt` at all — inside the up-to-10s window
+     between an offer lapsing and the sweeper (`expireStaleOffers`, polled every 10s) reaching it, the
+     stale `matched` ride was still directly acceptable.
+  4. `getPendingRides`'s query didn't exclude `rejectedBy` — an expired/declined ride reappeared in that
+     same driver's pending list immediately after revert.
+  5. `OfferCard.tsx`'s 30s countdown was purely cosmetic — at 0s it just displayed "0s to respond" forever
+     with Accept/Decline still enabled; the card only cleared on a `ride:offer-expired` socket event, so a
+     missed event (e.g. a disconnect/reconnect gap) left a permanently stale, still-clickable card.
+- **Action:** Closed all five: added `rejectedBy: { $ne: driverId }` to `offerRideToDriver`'s atomic
+  `findOneAndUpdate` filter (gap #1 — this alone also closes gap #2, since the fallback path in
+  `acceptRide` now fails atomically at the DB level rather than needing a separate controller-side check);
+  added `offerExpiresAt: { $gt: new Date() }` to `acceptOffer`'s atomic filter (gap #3 — the authoritative
+  fix, correct regardless of sweep timing); added the same `rejectedBy` exclusion to `getPendingRides`'s
+  `$near` query (gap #4); and made `OfferCard.tsx`'s countdown disable both buttons and show "Offer
+  expired" locally the moment it hits 0, instead of waiting solely on the socket event (gap #5 — client-side
+  belt, the server-side guards are the suspenders that actually make this safe).
+- **Why:** Every guard was added as an atomic MongoDB filter condition (not a separate read-then-check),
+  matching the existing pattern in this file (`findOneAndUpdate` with a conflict-proof filter, `!ride` means
+  "conflict") rather than introducing a new consistency risk while fixing this one. `acceptOffer`'s
+  `offerExpiresAt` check is the one genuinely load-bearing fix — it closes the race with zero dependency
+  on sweep frequency; the `rejectedBy` guard on `offerRideToDriver` and the `getPendingRides` filter close
+  the two ways a driver could still see/reach an offer they'd already passed on.
+- **Alternatives considered:** Tightening the sweeper interval (10s → shorter) instead of adding the
+  `offerExpiresAt` check to `acceptOffer` — rejected; it would shrink the race window but not close it, and
+  the atomic guard is free (one extra filter clause) versus trading off sweep frequency against server load.
+  Adding a redundant `rejectedBy` check in the `acceptRide` controller on top of the `MatchingService`-level
+  guard — rejected as dead weight; the atomic guard in `offerRideToDriver` already produces the correct 409
+  through the existing fallback flow, so a second check would only duplicate logic without closing any
+  additional gap.
+- **Tradeoffs / risks:** None identified — every change is a stricter/additional condition on an already
+  atomic operation; no existing success path is narrowed. 3 new backend tests cover the guards directly
+  (rejected-driver re-offer, expired-but-unswept accept, `getPendingRides` exclusion).

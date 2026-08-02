@@ -480,6 +480,38 @@ describe('MatchingService - Offer / Accept / Decline flow', () => {
         expect(updated.status).toBe('requested');
         expect(updated.driverId).toBeNull();
     });
+
+    it('offerRideToDriver refuses to re-offer a ride to a driver already in rejectedBy', async () => {
+        const driver = await global.testUtils.createTestDriver();
+        const ride = await makeTestRide();
+        await MatchingService.offerRideToDriver(ride._id, driver._id);
+        await MatchingService.declineOffer(ride._id, driver._id);
+
+        // Ride is back to 'requested' with driverId:null - the same shape offerRideToDriver's
+        // main guard accepts - but rejectedBy must still block the same driver claiming it.
+        const result = await MatchingService.offerRideToDriver(ride._id, driver._id);
+
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('ASSIGNMENT_CONFLICT');
+    });
+
+    it('acceptOffer refuses an offer whose deadline has already passed, even before the sweeper reverts it', async () => {
+        const driver = await global.testUtils.createTestDriver();
+        const ride = await makeTestRide();
+        await MatchingService.offerRideToDriver(ride._id, driver._id);
+
+        // Simulate the offer having lapsed without the 10s sweeper having reached it yet
+        const { Ride } = require('../../models');
+        await Ride.findByIdAndUpdate(ride._id, { offerExpiresAt: new Date(Date.now() - 1000) });
+
+        const result = await MatchingService.acceptOffer(ride._id, driver._id);
+
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('ASSIGNMENT_CONFLICT');
+
+        const updated = await Ride.findById(ride._id);
+        expect(updated.status).toBe('matched'); // untouched by the failed accept - sweeper still owns the revert
+    });
 });
 
 describe('MatchingService - Edge Cases', () => {
