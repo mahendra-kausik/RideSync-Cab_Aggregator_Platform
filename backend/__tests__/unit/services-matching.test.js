@@ -304,31 +304,34 @@ describe('MatchingService - Error Handling', () => {
 });
 
 describe('MatchingService - Performance Tests', () => {
+    // Date.now() only has millisecond resolution, so timing a sub-millisecond call with it
+    // is a coin flip: any run that straddles a tick boundary reads as "1ms" and fails a <1
+    // assertion even though the real duration is a few microseconds. process.hrtime.bigint()
+    // has nanosecond resolution and measures what these tests actually mean to check.
+    const elapsedMs = (startNs) => Number(process.hrtime.bigint() - startNs) / 1e6;
+
     it('should calculate distance in less than 1ms', () => {
-        const startTime = Date.now();
+        const startTime = process.hrtime.bigint();
 
         MatchingService._calculateDistance(-74.006, 40.7128, -75.1652, 39.9526);
 
-        const duration = Date.now() - startTime;
-        expect(duration).toBeLessThan(1);
+        expect(elapsedMs(startTime)).toBeLessThan(1);
     });
 
     it('should estimate arrival time in less than 1ms', () => {
-        const startTime = Date.now();
+        const startTime = process.hrtime.bigint();
 
         MatchingService._estimateArrivalTime(-74.006, 40.7128, -74.006, 40.7218);
 
-        const duration = Date.now() - startTime;
-        expect(duration).toBeLessThan(1);
+        expect(elapsedMs(startTime)).toBeLessThan(1);
     });
 
     it('should validate coordinates in less than 1ms', () => {
-        const startTime = Date.now();
+        const startTime = process.hrtime.bigint();
 
         MatchingService._validateCoordinates(-74.006, 40.7128);
 
-        const duration = Date.now() - startTime;
-        expect(duration).toBeLessThan(1);
+        expect(elapsedMs(startTime)).toBeLessThan(1);
     });
 
     it('should handle 1000 distance calculations quickly', () => {

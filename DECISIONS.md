@@ -1660,3 +1660,37 @@
   earnings queries themselves (zero prior tests matched `earnings`/`totalEarnings`/`driver/stats`), so this
   fix was verified by manual end-to-end run rather than an automated regression test — left as a gap for a
   future pass rather than added here to keep this change scoped to what was asked.
+
+## P-022 — GitHub Actions failed after the P-021 push; root cause was an unrelated flaky performance-timing test
+- **Date / Layer:** 2026-08-02 / post-ship bugfix
+- **Context:** User reported the CI run for the P-021 push (commit `a384749`) failed. Neither `gh` CLI nor
+  a token with Actions-log read access was available in this environment initially, and the GitHub REST
+  API's job-logs endpoint 403'd without admin rights (annotations only surfaced a generic "Process
+  completed with exit code 1", no test detail).
+- **Action:** Installed GitHub CLI via `winget install --id GitHub.cli`, authenticated with
+  `gh auth login -w` (device-flow, user completed the browser step), then used
+  `gh run view <id> --log-failed` to pull the actual failing step's output. This revealed
+  `Test Suites: 1 failed, 13 passed, 14 total` — only `__tests__/unit/services-matching.test.js` failed,
+  specifically `MatchingService - Performance Tests › should calculate distance in less than 1ms`
+  (`expect(duration).toBeLessThan(1)`, received exactly `1`). Every P-020/P-021 test passed in that same
+  run, confirming the failure was pre-existing and unrelated to the just-shipped changes.
+  Root cause: the test measures a single Haversine-distance call with `Date.now()`, which only has
+  **millisecond** resolution — the real duration is a handful of microseconds, but `Date.now()` truncates
+  to whole milliseconds, so any run whose call happens to straddle a tick boundary reads as `1` and fails
+  a strict `<1` comparison. This reproduced nowhere locally (ran the full suite both with plain `npx jest`
+  and `--runInBand`, 184/184 both times) because the local machine is faster/less loaded than CI's shared
+  runner, not because the assertion was actually reliable — it was a coin flip everywhere, just one that
+  landed differently on a slower runner.
+- **Decision:** Replaced `Date.now()` with `process.hrtime.bigint()` (nanosecond resolution, immune to
+  the rounding problem) in the three single-call performance tests in `services-matching.test.js`. Left
+  the fourth performance test (1000 iterations against a 100ms budget) untouched — at that scale the
+  budget has real margin and isn't timing-sensitive the same way.
+- **Why:** Fixing the timer is the actual root-cause fix, not a band-aid. Loosening the threshold (e.g.
+  `<5`) would have papered over a broken measurement instead of measuring correctly; `hrtime.bigint()`
+  gives these tests the precision their own assertions assume.
+- **Alternatives considered:** Widening the `<1` threshold to something like `<5`ms — rejected, since the
+  test's stated intent ("in less than 1ms") would then be checking something it doesn't actually assert;
+  fixing the timer preserves the original intent instead of diluting it. Marking the tests `flaky`/retried
+  — rejected as unnecessary once the actual measurement bug is fixed.
+- **Tradeoffs / risks:** None identified — this only changes test instrumentation, not application code.
+  Re-verified full backend suite (184/184) and ESLint (clean) after the change before pushing.

@@ -387,6 +387,15 @@ P-007-style "looks wired up, silently isn't" bugs:
   type-check clean, build clean, 59/59 frontend tests. Historical rides completed-but-unpaid before this
   change will show lower earnings on next read (no data rewritten, per user's call) — full writeup in
   DECISIONS.md P-021.
+- P-022 — The P-021 push (a384749) failed GitHub Actions. Diagnosed via `gh` CLI (installed via winget,
+  logged in with device-flow auth — neither was available beforehand). Root cause was unrelated to P-021:
+  `services-matching.test.js`'s 3 single-call "performance" tests timed a sub-millisecond operation with
+  `Date.now()`, which only has millisecond resolution — any run straddling a tick boundary reads as "1ms"
+  and fails a `toBeLessThan(1)` assertion even though the true duration is microseconds. Passed locally
+  (faster/less loaded machine, both parallel and `--runInBand`) but flaked on CI's shared runner. Switched
+  all 3 to `process.hrtime.bigint()` (nanosecond resolution). The 4th performance test (1000 iterations,
+  100ms budget) was untouched — enough margin at that scale to not be timing-sensitive. Backend 184/184,
+  lint clean. Full writeup in DECISIONS.md P-022.
 
 ## Open items
 - ~~P-009: live re-verification~~ — **resolved**: confirmed live from two different devices; `trust proxy`
