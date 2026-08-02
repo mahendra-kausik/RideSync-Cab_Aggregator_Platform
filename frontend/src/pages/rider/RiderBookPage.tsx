@@ -115,70 +115,13 @@ const RiderBookPage: React.FC = () => {
     }
   }, [user, joinRideRoom]);
 
-  // Set current location when geolocation is available
-  useEffect(() => {
-    console.log('Geolocation state:', {
-      lat: geolocation.latitude,
-      lng: geolocation.longitude,
-      loading: geolocation.loading,
-      error: geolocation.error
-    });
-
-    if (geolocation.latitude && geolocation.longitude && !geolocation.loading) {
-      const coords: [number, number] = [geolocation.longitude, geolocation.latitude];
-      console.log('Geolocation coordinates received:', coords);
-
-      // Check if coordinates are reasonable (roughly within India bounds)
-      // India bounds: Lat 8-37°N, Lng 68-97°E
-      const isInIndia = geolocation.latitude >= 8 && geolocation.latitude <= 37 &&
-        geolocation.longitude >= 68 && geolocation.longitude <= 97;
-
-      console.log('Is location in India?', isInIndia);
-
-      if (isInIndia) {
-        setCurrentLocation(coords);
-
-        if (!pickup) {
-          geocodingService.reverseGeocode(coords).then(address => {
-            setPickup({ coordinates: coords, address });
-            setPickupAddress(address);
-          }).catch(() => {
-            const fallbackAddress = `${geolocation.latitude?.toFixed(6)}, ${geolocation.longitude?.toFixed(6)}`;
-            setPickup({ coordinates: coords, address: fallbackAddress });
-            setPickupAddress(fallbackAddress);
-          });
-        }
-      } else {
-        // Use default Bengaluru location if geolocation is outside India
-        console.log('Geolocation outside India, using Bengaluru default');
-        const defaultCoords: [number, number] = [77.5946, 12.9716];
-        setCurrentLocation(defaultCoords);
-
-        if (!pickup) {
-          geocodingService.reverseGeocode(defaultCoords).then(address => {
-            setPickup({ coordinates: defaultCoords, address });
-            setPickupAddress(address);
-          }).catch(() => {
-            setPickup({ coordinates: defaultCoords, address: 'Bengaluru, Karnataka, India' });
-            setPickupAddress('Bengaluru, Karnataka, India');
-          });
-        }
-      }
-    } else if (geolocation.error && !geolocation.loading && !pickup) {
-      // If geolocation failed, use default Bengaluru location
-      console.log('Geolocation failed, using Bengaluru default. Error:', geolocation.error);
-      const defaultCoords: [number, number] = [77.5946, 12.9716];
-      setCurrentLocation(defaultCoords);
-
-      geocodingService.reverseGeocode(defaultCoords).then(address => {
-        setPickup({ coordinates: defaultCoords, address });
-        setPickupAddress(address);
-      }).catch(() => {
-        setPickup({ coordinates: defaultCoords, address: 'Bengaluru, Karnataka, India' });
-        setPickupAddress('Bengaluru, Karnataka, India');
-      });
-    }
-  }, [geolocation, pickup]);
+  // NOTE: automatic geolocation is disabled above (see the `geolocation` stub) -
+  // pickup is set only via map click, address search, or the "Use My Location"
+  // button (see useMyLocation below). A previous version of this effect fell
+  // back to a hardcoded Bengaluru coordinate when geolocation was unavailable,
+  // silently booking rides from the wrong city; that fallback has been removed
+  // rather than re-enabled, since desktop/IP-based geolocation is frequently
+  // wrong by tens of km and a rider should always confirm their own pickup.
 
   // Estimate fare when both locations are set
   useEffect(() => {

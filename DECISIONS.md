@@ -1694,3 +1694,68 @@
   — rejected as unnecessary once the actual measurement bug is fixed.
 - **Tradeoffs / risks:** None identified — this only changes test instrumentation, not application code.
   Re-verified full backend suite (184/184) and ESLint (clean) after the change before pushing.
+
+## P-023 — Ride matching almost never finds a driver: three independent root causes
+- **Date / Layer:** 2026-08-03 / post-ship bugfix (Phase 1 of ride-acceptance fix)
+- **Context:** User reported that requesting a ride defaults to searching from the wrong location and
+  usually returns no driver found, and that on the rare occasion a driver was found, the ride was
+  auto-assigned to them with no acceptance step. Tracing the full backend + frontend flow (two Explore
+  subagents plus direct file reads) found three separate, independently-sufficient causes:
+  1. An available driver's location is **never written to the DB** unless they are already on a ride —
+     `DriverDashboardPage.tsx`'s location-update effect was gated on `activeRide` being set, so an idle
+     available driver's `driverInfo.currentLocation` stayed at whatever registration/seed data left it.
+     `MatchingService`'s `$near` query therefore searched against stale coordinates.
+  2. Automatic matching **always threw**. `_findAvailableDriversInRadius` (`MatchingService.js`) returns
+     `.lean()` plain objects for performance, but `_findNearestDriver` called `.toObject()` on them —
+     `.lean()` documents have no such method, so this threw a `TypeError` on every single match attempt,
+     caught and returned as `MATCHING_SERVICE_ERROR`. Automatic matching had never once succeeded; any
+     ride that got a driver got one through the manual pending-list Accept instead.
+  3. When a driver's browser had no location fix yet, `getPendingRides` fell back to returning **every**
+     `status:'requested'` ride platform-wide with no distance filter, masking cause #1's symptom with an
+     unrelated one (a driver seeing rides far outside any usable radius).
+- **Action:** (1) Split the driver-side location effect so the DB write runs whenever available/on-ride,
+  independent of the real-time socket broadcast (which does still require an active ride, since it needs
+  a `rideId` and only the rider's ride-room listens); added a distance/time throttle (>50m or >15s since
+  last write) using the existing `geocodingService.calculateDistance`, since an unconditional write would
+  fire on every `watchPosition` tick (~1/sec). (2) Removed `.toObject()`, spreading the lean object
+  directly, with a filter skipping any driver missing valid location coordinates instead of crashing.
+  (3) Replaced the unfiltered global fallback with an empty result + `LOCATION_REQUIRED` reason, and made
+  the driver dashboard re-fetch pending rides once a GPS fix arrives (previously the mount-time fetch
+  always raced ahead of `watchPosition`, so it was permanently stuck on the no-location branch until some
+  other trigger fired).
+- **Why:** Each of the three bugs independently explains "no driver found" reports; fixing only one would
+  have left the report reproducible. The lean/toObject crash in particular meant the "happy path" the
+  system was designed around (automatic radius-expanding match) had silently never executed in production.
+- **Tradeoffs / risks:** The pending list now requires driver location rather than falling back to a
+  global list — intentional (see D-017); a driver who denies location permission entirely sees an
+  explicit "Location required" message instead of an unfiltered, borderline-unusable ride list.
+
+## D-017 — Keep rider-side automatic geolocation disabled; drop the dead Bengaluru fallback instead of re-enabling it
+- **Date / Layer:** 2026-08-03 / Phase 1 of ride-acceptance fix
+- **Context:** While auditing the rider booking flow (`RiderBookPage.tsx`) for the P-023 investigation, found
+  that automatic geolocation had been replaced with a hardcoded stub (`{latitude: null, ...}`) with the
+  comment "Disable automatic geolocation - use manual button instead" — the "Use My Location" button still
+  works on demand. Behind that stub sat dead code: two branches that, if geolocation were ever live, would
+  silently set the rider's pickup to a hardcoded Bengaluru coordinate (`[77.5946, 12.9716]`) whenever the
+  browser's location was outside a hardcoded India bounding box or geolocation failed/was denied.
+  Initial plan (before this entry) was to re-enable geolocation and delete the Bengaluru fallback. On
+  review, re-enabling was reconsidered.
+- **Decision:** Leave the geolocation stub in place (manual "Use My Location" button remains the only
+  automatic path). Delete the two dead Bengaluru-fallback branches entirely rather than leaving them latent.
+- **Why:** The stub predates this project's decision log — it was already present in the initial import
+  commit (`eb36d5e`, 2025-11-08), before `DECISIONS.md` existed, so there is no recorded reason, but no
+  recorded reason isn't the same as no reason. The most likely explanation is the exact symptom being
+  fixed here: desktop/laptop browsers geolocate via Wi-Fi/IP triangulation, not GPS, and are routinely
+  wrong by tens of kilometers — a rider on a desktop could easily read as "outside India" or another city
+  entirely. Re-enabling automatic geolocation would not just be a no-op; it would **activate** the
+  Bengaluru-fallback branches for the first time, meaning any rider whose geolocation is imprecise would
+  have a ride silently booked from Bengaluru city center instead of their real pickup — reintroducing a
+  worse version of the bug this whole fix is for. Deleting the fallback removes that landmine regardless
+  of what happens to the stub later.
+- **Alternatives considered:** Re-enabling `useGeolocation()` — rejected for the reason above. Keeping the
+  Bengaluru fallback but only using it as a last resort — rejected; a silently-wrong pickup is worse than
+  requiring the rider to confirm their location, since a wrong pickup fails much later (no driver in
+  range, or a driver dispatched to the wrong city) instead of failing visibly at booking time.
+- **Tradeoffs / risks:** Riders must use the map, address search, or the manual "Use My Location" button;
+  there is no zero-click default. This is judged acceptable since the Book button is already disabled
+  until `pickup` is set, so there is no silent failure mode — only a required extra step.

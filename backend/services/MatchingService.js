@@ -81,22 +81,28 @@ class MatchingService {
                 );
 
                 if (drivers.length > 0) {
-                    // Calculate distances and estimated arrival times
-                    const driversWithMetadata = drivers.map(driver => ({
-                        ...driver.toObject(),
-                        distance: this._calculateDistance(
-                            pickupLongitude,
-                            pickupLatitude,
-                            driver.driverInfo.currentLocation.coordinates[0],
-                            driver.driverInfo.currentLocation.coordinates[1]
-                        ),
-                        estimatedArrival: this._estimateArrivalTime(
-                            pickupLongitude,
-                            pickupLatitude,
-                            driver.driverInfo.currentLocation.coordinates[0],
-                            driver.driverInfo.currentLocation.coordinates[1]
-                        )
-                    }));
+                    // Calculate distances and estimated arrival times.
+                    // _findAvailableDriversInRadius returns lean() docs, so these are already
+                    // plain objects - spread directly (calling .toObject() on them throws).
+                    // A driver whose location is missing/malformed is skipped rather than
+                    // allowed to throw and take the whole match down.
+                    const driversWithMetadata = drivers
+                        .filter(driver => Array.isArray(driver.driverInfo?.currentLocation?.coordinates))
+                        .map(driver => ({
+                            ...driver,
+                            distance: this._calculateDistance(
+                                pickupLongitude,
+                                pickupLatitude,
+                                driver.driverInfo.currentLocation.coordinates[0],
+                                driver.driverInfo.currentLocation.coordinates[1]
+                            ),
+                            estimatedArrival: this._estimateArrivalTime(
+                                pickupLongitude,
+                                pickupLatitude,
+                                driver.driverInfo.currentLocation.coordinates[0],
+                                driver.driverInfo.currentLocation.coordinates[1]
+                            )
+                        }));
 
                     // Sort by distance (nearest first)
                     driversWithMetadata.sort((a, b) => a.distance - b.distance);

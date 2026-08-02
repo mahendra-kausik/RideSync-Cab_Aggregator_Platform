@@ -4,6 +4,7 @@ import { useSocket, useSocketEvent } from '../../contexts/SocketContext';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { rideService } from '../../services/rideService';
 import { driverService } from '../../services/driverService';
+import { geocodingService } from '../../services/geocodingService';
 import { Ride } from '../../types';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import MapComponent from '../../components/common/MapComponent';
@@ -38,11 +39,25 @@ const DriverDashboardPage: React.FC = () => {
   // availability toggle, manual refresh) - responses can resolve out of
   // order, so track the latest request and drop stale ones.
   const pendingRidesRequestId = useRef(0);
+  // Last position/time we persisted to the DB, so idle-driver location writes
+  // are throttled instead of firing on every watchPosition tick (~1/sec).
+  const lastSentLocationRef = useRef<{ coords: [number, number]; at: number } | null>(null);
 
   // Load initial data
   useEffect(() => {
     loadDashboardData();
   }, []);
+
+  // Re-fetch the pending list once a GPS fix arrives - the mount fetch above
+  // always races ahead of watchPosition, so it would otherwise be stuck on
+  // the no-location (now empty/LOCATION_REQUIRED) result until some other
+  // trigger (toggle, refresh button) re-ran it.
+  useEffect(() => {
+    if (geolocation.latitude && geolocation.longitude && isAvailable && !activeRide) {
+      loadPendingRides();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [geolocation.latitude, geolocation.longitude]);
 
   // Fetch route from OSRM when activeRide changes
   useEffect(() => {
@@ -88,18 +103,35 @@ const DriverDashboardPage: React.FC = () => {
     fetchRoute();
   }, [activeRide]);
 
-  // Handle location updates - flows automatically whenever a ride is active
+  // Persist location whenever we have a fix and the driver is online - not just
+  // while on a ride - so MatchingService's $near query has a real position to
+  // search against instead of whatever was set at registration. Throttled to
+  // avoid a DB write on every watchPosition tick (~1/sec with high accuracy).
   useEffect(() => {
-    if (geolocation.latitude && geolocation.longitude && activeRide) {
-      // Update location in database
+    if (!geolocation.latitude || !geolocation.longitude) return;
+    if (!activeRide && !isAvailable) return;
+
+    const coords: [number, number] = [geolocation.longitude, geolocation.latitude];
+    const last = lastSentLocationRef.current;
+    const now = Date.now();
+    const movedFarEnough = !last || geocodingService.calculateDistance(last.coords, coords) > 0.05; // 50m
+    const enoughTimePassed = !last || now - last.at > 15000; // 15s
+
+    if (movedFarEnough || enoughTimePassed) {
+      lastSentLocationRef.current = { coords, at: now };
       driverService.updateLocation({
         latitude: geolocation.latitude,
         longitude: geolocation.longitude,
         heading: geolocation.heading || undefined,
         speed: geolocation.speed || undefined,
       }).catch(console.error);
+    }
+  }, [geolocation.latitude, geolocation.longitude, activeRide, isAvailable]);
 
-      // Emit real-time location update
+  // Real-time location broadcast to ride participants - only meaningful while
+  // on a ride, since it requires a rideId and only the rider room listens.
+  useEffect(() => {
+    if (geolocation.latitude && geolocation.longitude && activeRide) {
       emitDriverLocationUpdate(activeRide._id, [geolocation.longitude, geolocation.latitude]);
     }
   }, [geolocation.latitude, geolocation.longitude, activeRide, emitDriverLocationUpdate]);
@@ -377,6 +409,7 @@ const DriverDashboardPage: React.FC = () => {
               isAvailable={isAvailable}
               onRefresh={loadPendingRides}
               acceptingRideId={acceptingRideId}
+              locationAvailable={!!(geolocation.latitude && geolocation.longitude)}
             />
           )}
 

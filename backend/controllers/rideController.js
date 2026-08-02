@@ -465,17 +465,16 @@ class RideController {
         });
 
       } else {
-        // Return all pending rides if no location provided
-        const rides = await Ride.find({ status: 'requested' })
-          .populate('riderId', 'profile.name phone')
-          .sort({ createdAt: 1 })
-          .limit(20);
-
+        // No location provided - an unfiltered global query would let a driver
+        // in another city see and accept rides far outside any sane radius, so
+        // require location instead of returning everything platform-wide.
         res.json({
           success: true,
           data: {
-            rides,
-            count: rides.length
+            rides: [],
+            count: 0,
+            radius: radius,
+            reason: 'LOCATION_REQUIRED'
           },
           timestamp: new Date().toISOString()
         });

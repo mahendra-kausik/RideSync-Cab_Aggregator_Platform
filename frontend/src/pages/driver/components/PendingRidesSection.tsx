@@ -7,6 +7,7 @@ interface PendingRidesSectionProps {
   isAvailable: boolean;
   onRefresh: () => void;
   acceptingRideId: string | null;
+  locationAvailable: boolean;
 }
 
 // Pending-list distance defaults to the Haversine estimate stored on the ride
@@ -60,7 +61,8 @@ const PendingRidesSection: React.FC<PendingRidesSectionProps> = ({
   onAcceptRide,
   isAvailable,
   onRefresh,
-  acceptingRideId
+  acceptingRideId,
+  locationAvailable
 }) => {
   // Ensure rides is always an array
   const safeRides = Array.isArray(rides) ? rides : [];
@@ -109,12 +111,17 @@ const PendingRidesSection: React.FC<PendingRidesSectionProps> = ({
         </button>
       </div>
 
-      {safeRides.length === 0 ? (
+      {!locationAvailable ? (
+        <div className="no-rides">
+          <div className="no-rides-icon">📍</div>
+          <h4>Location required</h4>
+          <p>Enable location access in your browser to see ride requests near you</p>
+        </div>
+      ) : safeRides.length === 0 ? (
         <div className="no-rides">
           <div className="no-rides-icon">🔍</div>
           <h4>No pending ride requests</h4>
           <p>We'll notify you when new requests come in your area</p>
-          <small>Make sure your location is enabled for better matching</small>
         </div>
       ) : (
         <div className="rides-list">
