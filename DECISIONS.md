@@ -1967,3 +1967,23 @@
   lingering (blacklisted-but-technically-still-a-live-record) until it would otherwise expire.
 - **Tradeoffs / risks (if applicable):** None — no prior behavior depended on refresh succeeding for a
   suspended account (nothing could be usefully done with the resulting token).
+
+## P-027 — Rider stuck showing "Matched" after a driver's offer expired
+- **Date / Layer:** 2026-08-03 / Ride-matching UX bugfix (user-reported)
+- **Context:** User reported that when a driver lets the 30s ride offer lapse (or declines), the ride
+  correctly disappears from the driver's screen and the backend reverts the ride to `status: 'requested'`
+  and re-matches — but the rider's UI kept showing "Matched"/"Finding a driver for your ride..." until a
+  manual page refresh. Root cause: `MatchingService._revertOfferAndRematch()` (shared by `declineOffer` and
+  `expireStaleOffers`) updated the ride document but emitted no socket event; `expireStaleOffers` only sent
+  `ride:offer-expired` to the driver. The rider's `RiderBookPage` listens for `ride:status-change` /
+  `ride:status-updated`, so with nothing emitted, its `currentRide.status` never left `'matched'`. The
+  driver-lock rollback branch in `offerRideToDriver` (rare race where the driver goes unavailable between
+  the ride and driver updates) had the same silent-revert gap.
+- **Action:** Both revert paths now call `socketService.broadcastToRide(rideId, 'ride:status-change', {status:
+  'requested', ...})` before re-matching (same pattern `_notifyOffer` already uses for the 'matched' event).
+  Added a `case 'requested'` to both rider-side status switches in `RiderBookPage.tsx` so the banner reads
+  "Looking for another driver..." instead of going stale.
+- **Why:** Fixing at the shared `_revertOfferAndRematch` helper covers decline and expiry in one change; the
+  same broadcast added to the lock-rollback branch closes the last silent-revert gap.
+- **Tradeoffs / risks (if applicable):** None — reuses the existing room-broadcast pattern and event name,
+  no new socket event, no schema change.

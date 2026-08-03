@@ -470,6 +470,13 @@ P-007-style "looks wired up, silently isn't" bugs:
   database. The script was since extended to also delete every completed ride (commit `8b29b37`, not
   separately logged with a P-number), so this run also cleared all ride history.
 
+**Rider offer-expiry UI fixed (P-027):** user reported the rider's screen stayed stuck on "Matched"/"Finding
+a driver..." after a driver let the 30s offer lapse, until manually refreshed. `MatchingService`'s shared
+`_revertOfferAndRematch` (used by both `declineOffer` and `expireStaleOffers`) and the driver-lock rollback
+branch of `offerRideToDriver` now broadcast `ride:status-change` (`status: 'requested'`) to the ride room,
+same pattern already used for the 'matched' event. `RiderBookPage.tsx` handles the new `'requested'` case
+in both status switches. Backend **205/205** (1 new test), frontend **59/59**. Committed and pushed.
+
 **Auth token lifecycle hardened further (P-026):** `refreshSession()` now checks `user.isActive` and kills
 the session if the account was suspended by an admin mid-session, instead of silently minting a now-useless
 token pair. Backend **203/203**.

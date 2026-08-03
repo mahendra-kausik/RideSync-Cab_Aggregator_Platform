@@ -276,6 +276,12 @@ class MatchingService {
                     offerExpiresAt: null
                 });
 
+                socketService.broadcastToRide(rideId.toString(), 'ride:status-change', {
+                    rideId: rideId.toString(),
+                    status: 'requested',
+                    timestamp: new Date().toISOString()
+                });
+
                 return {
                     success: false,
                     error: 'ASSIGNMENT_CONFLICT',
@@ -373,6 +379,14 @@ class MatchingService {
         );
 
         await this.releaseDriver(driverId);
+
+        // Tell the rider's UI the ride is back to 'requested' - without this, the
+        // rider stays stuck showing "Matched"/"Finding a driver" until they refresh.
+        socketService.broadcastToRide(ride._id.toString(), 'ride:status-change', {
+            rideId: ride._id.toString(),
+            status: 'requested',
+            timestamp: new Date().toISOString()
+        });
 
         const pickupCoords = ride.pickup.coordinates.coordinates;
         const rejectedBy = [...(ride.rejectedBy || []), driverId].map(id => id.toString());

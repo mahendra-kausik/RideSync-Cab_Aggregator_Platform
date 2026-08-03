@@ -467,6 +467,28 @@ describe('MatchingService - Offer / Accept / Decline flow', () => {
         expect(releasedDriver.driverInfo.isAvailable).toBe(true);
     });
 
+    it('expireStaleOffers notifies the rider the ride is back to requested', async () => {
+        const socketService = require('../../services/socketService');
+        const broadcastSpy = jest.spyOn(socketService, 'broadcastToRide').mockImplementation(() => {});
+
+        const driver = await global.testUtils.createTestDriver();
+        const ride = await makeTestRide();
+        await MatchingService.offerRideToDriver(ride._id, driver._id);
+
+        const { Ride } = require('../../models');
+        await Ride.findByIdAndUpdate(ride._id, { offerExpiresAt: new Date(Date.now() - 1000) });
+
+        broadcastSpy.mockClear(); // drop the 'matched' broadcast from offerRideToDriver
+        await MatchingService.expireStaleOffers();
+
+        expect(broadcastSpy).toHaveBeenCalledWith(ride._id.toString(), 'ride:status-change', expect.objectContaining({
+            rideId: ride._id.toString(),
+            status: 'requested'
+        }));
+
+        broadcastSpy.mockRestore();
+    });
+
     it('does not re-offer to a driver already in rejectedBy', async () => {
         const decliningDriver = await global.testUtils.createTestDriver();
         const ride = await makeTestRide();

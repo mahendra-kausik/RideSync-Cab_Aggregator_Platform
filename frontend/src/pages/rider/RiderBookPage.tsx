@@ -159,6 +159,9 @@ const RiderBookPage: React.FC = () => {
 
       // Handle different status changes
       switch (data.status) {
+        case 'requested':
+          setSuccessMessage('Looking for another driver...');
+          break;
         case 'matched':
           setSuccessMessage('Finding a driver for your ride...');
           break;
@@ -191,6 +194,9 @@ const RiderBookPage: React.FC = () => {
     if (currentRide && data.rideId === currentRide._id) {
       setCurrentRide(prev => prev ? { ...prev, status: data.status } : null);
       switch (data.status) {
+        case 'requested':
+          setSuccessMessage('Looking for another driver...');
+          break;
         case 'matched':
           setSuccessMessage('Finding a driver for your ride...');
           break;
