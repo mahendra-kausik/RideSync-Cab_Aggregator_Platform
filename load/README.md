@@ -1,7 +1,9 @@
 # Layer 3 — Load testing
 
 Three scenarios, run locally against `node server.js` with `NODE_ENV=development`
-(see `DECISIONS.md` for why local, not the live Render deploy). Zero backend
+— fault-injection endpoints only mount in dev mode, and free-tier caps (Upstash
+500K commands/mo, Atlas 10 GB/7-day, Render's throttled shared CPU) make a sustained
+run against the live Render deploy both risky and unrepresentative. Zero backend
 runtime code changes — every script hits existing public/dev-only endpoints.
 
 | Scenario | Tool | Target | Measures |

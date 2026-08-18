@@ -146,7 +146,7 @@ const mongoIdParamSchema = Joi.object({
 // User validation schemas
 // Note: registration/OTP/login/forgot-password validation lives solely in
 // authController.js's own Joi schemas -- this file used to carry a second,
-// looser, silently-drifting copy of the same rules (see DECISIONS.md P-010).
+// looser, silently-drifting copy of the same rules.
 const locationUpdateSchema = Joi.object({
   coordinates: Joi.array().items(Joi.number()).length(2).required(),
   isAvailable: Joi.boolean().optional()

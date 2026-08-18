@@ -205,3 +205,12 @@ appendonly.aof
 # Miscellaneous
 .turbo/
 *.local
+
+# Internal working docs — not published to the remote
+CLAUDE.md
+DECISIONS.md
+PROGRESS.md
+PROJECT_PLAN.md
+ProjectInfo-RideSync.md
+CODE_TOUR.md
+INTERVIEW_PREP.md

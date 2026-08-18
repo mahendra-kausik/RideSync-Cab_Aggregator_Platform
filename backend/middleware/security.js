@@ -95,7 +95,7 @@ const createAdvancedRateLimiter = (name, options) => {
     // Uses our own INCR/PEXPIRE/PTTL store, not rate-limit-redis's Lua-script
     // RedisStore — that store's SCRIPT LOAD/EVALSHA path retries unconditionally
     // (and unbounded) on any error, including a deliberate timeout, defeating
-    // the whole point of bounding it (see DECISIONS.md's P-006 entries).
+    // the whole point of bounding it.
     store: redisClient ? new RedisRateLimitStore(redisClient, `rl:${name}:`) : undefined,
     message: {
       success: false,

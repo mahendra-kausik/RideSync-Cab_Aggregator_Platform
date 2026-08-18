@@ -132,11 +132,11 @@ to in-memory.
 
 ## Testing
 
-- **Backend:** 184/184 tests passing (Jest + Supertest, 14 suites — unit / integration / system).
+- **Backend:** 204/204 tests passing (Jest + Supertest, 16 suites — unit / integration / system).
 - **Frontend:** 59/59 tests passing (Vitest).
 
 ```bash
-cd backend  && npm test        # 184 tests
+cd backend  && npm test        # 204 tests
 cd frontend && npm test        # 59 tests
 ```
 

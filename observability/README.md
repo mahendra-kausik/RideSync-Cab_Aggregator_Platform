@@ -1,7 +1,9 @@
 # Observability — Grafana Cloud dashboard
 
 Feeds the live Render `/metrics` endpoint into a Grafana Cloud dashboard. Run on-demand (before a demo or
-before taking README screenshots) — see D-014/D-015 in `DECISIONS.md` for why this isn't an always-on job.
+before taking README screenshots) — Render's free tier has no second free process to run the scraper as
+an always-on job, so a local Grafana Alloy container scrapes `/metrics` and pushes to Grafana Cloud only
+while you're running it.
 
 ## One-time setup
 

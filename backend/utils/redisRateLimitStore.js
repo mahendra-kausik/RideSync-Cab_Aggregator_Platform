@@ -5,7 +5,7 @@ const { withRedisTimeout } = require('./withRedisTimeout');
 // SCRIPT LOAD/EVALSHA path retries unconditionally (and unbounded) on any
 // error -- including a deliberate withRedisTimeout rejection -- so a stale
 // connection just re-triggers another unbounded SCRIPT LOAD instead of
-// actually failing fast (see DECISIONS.md's third/fourth P-006 entries).
+// actually failing fast.
 // Plain INCR has no such retry machinery to fight: every command here is a
 // single, independently timeout-bound call.
 class RedisRateLimitStore {
